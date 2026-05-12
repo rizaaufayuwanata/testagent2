@@ -1,0 +1,40 @@
+[
+  {
+    "timestamp": "2026-05-10T06:00:00+07:00",
+    "das": "Citarum",
+    "total_anomali": 3,
+    "anomali_stasiun": [
+      {
+        "station_id": "KLHK02",
+        "indeks_mutu": 4.8,
+        "status": "CEMAR BERAT",
+        "profil": "INDUSTRI",
+        "ratio_cod_bod": 5.88
+      },
+      {
+        "station_id": "KLHK03",
+        "indeks_mutu": 4.2,
+        "status": "CEMAR BERAT",
+        "profil": "INDUSTRI",
+        "ratio_cod_bod": 5.12
+      },
+      {
+        "station_id": "KLHK09",
+        "indeks_mutu": 4.1,
+        "status": "CEMAR BERAT",
+        "profil": "INDUSTRI",
+        "ratio_cod_bod": 5.0
+      }
+    ],
+    "limpasan": false,
+    "industri_langgar": [
+      "SPR-007 PT Bumi Citra Permai",
+      "SPR-003 PT Daliatex Kusuma",
+      "SPR-001 PT Kahatex Textile (riwayat)"
+    ],
+    "ika_gap": -8.3,
+    "urgency": "TINDAK",
+    "confidence": 0.91,
+    "logged_at": "2026-05-12T08:44:49.219443"
+  }
+]

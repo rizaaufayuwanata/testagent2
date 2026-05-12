@@ -1,0 +1,99 @@
+{
+  "metadata": {
+    "source": "BMKG API (DUMMY)",
+    "region": "Kab. Bandung",
+    "generated": "2026-05-10T08:00:00+07:00"
+  },
+  "data": [
+    {
+      "kelurahan": "Kertasari",
+      "kecamatan": "Kertasari",
+      "kabkot": "Kab. Bandung",
+      "latitude": -7.2108,
+      "longitude": 107.6531,
+      "hourly": [
+        {"datetime": "2026-05-09T00:00", "tp": 0.0, "weather_desc": "Cerah"},
+        {"datetime": "2026-05-09T03:00", "tp": 0.0, "weather_desc": "Cerah Berawan"},
+        {"datetime": "2026-05-09T06:00", "tp": 0.2, "weather_desc": "Berawan"},
+        {"datetime": "2026-05-09T09:00", "tp": 1.5, "weather_desc": "Hujan Ringan"},
+        {"datetime": "2026-05-09T12:00", "tp": 3.8, "weather_desc": "Hujan Sedang"},
+        {"datetime": "2026-05-09T15:00", "tp": 2.1, "weather_desc": "Hujan Ringan"},
+        {"datetime": "2026-05-09T18:00", "tp": 0.5, "weather_desc": "Berawan"},
+        {"datetime": "2026-05-09T21:00", "tp": 0.0, "weather_desc": "Cerah Berawan"}
+      ],
+      "summary_24h": {"total_rainfall_mm": 8.1, "max_hourly_mm": 3.8}
+    },
+    {
+      "kelurahan": "Majalaya",
+      "kecamatan": "Majalaya",
+      "kabkot": "Kab. Bandung",
+      "latitude": -7.0514,
+      "longitude": 107.7539,
+      "hourly": [
+        {"datetime": "2026-05-09T00:00", "tp": 0.0, "weather_desc": "Cerah"},
+        {"datetime": "2026-05-09T03:00", "tp": 0.0, "weather_desc": "Cerah"},
+        {"datetime": "2026-05-09T06:00", "tp": 0.0, "weather_desc": "Berawan"},
+        {"datetime": "2026-05-09T09:00", "tp": 0.5, "weather_desc": "Berawan Tebal"},
+        {"datetime": "2026-05-09T12:00", "tp": 1.2, "weather_desc": "Hujan Ringan"},
+        {"datetime": "2026-05-09T15:00", "tp": 0.8, "weather_desc": "Gerimis"},
+        {"datetime": "2026-05-09T18:00", "tp": 0.0, "weather_desc": "Berawan"},
+        {"datetime": "2026-05-09T21:00", "tp": 0.0, "weather_desc": "Cerah"}
+      ],
+      "summary_24h": {"total_rainfall_mm": 2.5, "max_hourly_mm": 1.2}
+    },
+    {
+      "kelurahan": "Dayeuhkolot",
+      "kecamatan": "Dayeuhkolot",
+      "kabkot": "Kab. Bandung",
+      "latitude": -6.9867,
+      "longitude": 107.6198,
+      "hourly": [
+        {"datetime": "2026-05-09T00:00", "tp": 0.0, "weather_desc": "Cerah"},
+        {"datetime": "2026-05-09T03:00", "tp": 0.0, "weather_desc": "Cerah"},
+        {"datetime": "2026-05-09T06:00", "tp": 0.0, "weather_desc": "Cerah Berawan"},
+        {"datetime": "2026-05-09T09:00", "tp": 0.3, "weather_desc": "Berawan"},
+        {"datetime": "2026-05-09T12:00", "tp": 0.8, "weather_desc": "Gerimis"},
+        {"datetime": "2026-05-09T15:00", "tp": 0.5, "weather_desc": "Berawan"},
+        {"datetime": "2026-05-09T18:00", "tp": 0.0, "weather_desc": "Cerah Berawan"},
+        {"datetime": "2026-05-09T21:00", "tp": 0.0, "weather_desc": "Cerah"}
+      ],
+      "summary_24h": {"total_rainfall_mm": 1.6, "max_hourly_mm": 0.8}
+    },
+    {
+      "kelurahan": "Bojongsoang",
+      "kecamatan": "Bojongsoang",
+      "kabkot": "Kab. Bandung",
+      "latitude": -6.9945,
+      "longitude": 107.6412,
+      "hourly": [
+        {"datetime": "2026-05-09T00:00", "tp": 0.0, "weather_desc": "Cerah"},
+        {"datetime": "2026-05-09T03:00", "tp": 0.0, "weather_desc": "Cerah"},
+        {"datetime": "2026-05-09T06:00", "tp": 0.0, "weather_desc": "Berawan"},
+        {"datetime": "2026-05-09T09:00", "tp": 0.2, "weather_desc": "Berawan"},
+        {"datetime": "2026-05-09T12:00", "tp": 0.5, "weather_desc": "Gerimis"},
+        {"datetime": "2026-05-09T15:00", "tp": 0.4, "weather_desc": "Berawan"},
+        {"datetime": "2026-05-09T18:00", "tp": 0.0, "weather_desc": "Cerah"},
+        {"datetime": "2026-05-09T21:00", "tp": 0.0, "weather_desc": "Cerah"}
+      ],
+      "summary_24h": {"total_rainfall_mm": 1.1, "max_hourly_mm": 0.5}
+    },
+    {
+      "kelurahan": "Pameungpeuk",
+      "kecamatan": "Pameungpeuk",
+      "kabkot": "Kab. Bandung",
+      "latitude": -6.9789,
+      "longitude": 107.5832,
+      "hourly": [
+        {"datetime": "2026-05-09T00:00", "tp": 0.0, "weather_desc": "Cerah"},
+        {"datetime": "2026-05-09T03:00", "tp": 0.0, "weather_desc": "Cerah"},
+        {"datetime": "2026-05-09T06:00", "tp": 0.1, "weather_desc": "Berawan"},
+        {"datetime": "2026-05-09T09:00", "tp": 0.4, "weather_desc": "Berawan"},
+        {"datetime": "2026-05-09T12:00", "tp": 0.9, "weather_desc": "Gerimis"},
+        {"datetime": "2026-05-09T15:00", "tp": 0.3, "weather_desc": "Berawan"},
+        {"datetime": "2026-05-09T18:00", "tp": 0.0, "weather_desc": "Cerah"},
+        {"datetime": "2026-05-09T21:00", "tp": 0.0, "weather_desc": "Cerah"}
+      ],
+      "summary_24h": {"total_rainfall_mm": 1.7, "max_hourly_mm": 0.9}
+    }
+  ]
+}

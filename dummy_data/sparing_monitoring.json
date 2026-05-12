@@ -1,0 +1,41 @@
+{
+  "metadata": {
+    "source": "Sparing Monitoring KLHK (DUMMY)",
+    "period": "2026-05-08 to 2026-05-10",
+    "baku_mutu_ref": "PermenLHK No.16/2019"
+  },
+  "data": [
+    {"company_id": "SPR-001", "company_name": "PT Kahatex Textile", "date": "2026-05-10", "parameter": "COD", "value": 129.0, "baku_mutu": 150.0, "unit": "mg/L", "status": "TAAT"},
+    {"company_id": "SPR-001", "company_name": "PT Kahatex Textile", "date": "2026-05-10", "parameter": "BOD", "value": 42.0, "baku_mutu": 50.0, "unit": "mg/L", "status": "TAAT"},
+    {"company_id": "SPR-001", "company_name": "PT Kahatex Textile", "date": "2026-05-10", "parameter": "TSS", "value": 185.0, "baku_mutu": 200.0, "unit": "mg/L", "status": "TAAT"},
+    {"company_id": "SPR-001", "company_name": "PT Kahatex Textile", "date": "2026-05-10", "parameter": "pH", "value": 6.2, "baku_mutu_min": 6.0, "baku_mutu_max": 9.0, "unit": "-", "status": "TAAT"},
+    {"company_id": "SPR-001", "company_name": "PT Kahatex Textile", "date": "2026-05-09", "parameter": "COD", "value": 168.0, "baku_mutu": 150.0, "unit": "mg/L", "status": "LANGGAR"},
+    {"company_id": "SPR-001", "company_name": "PT Kahatex Textile", "date": "2026-05-09", "parameter": "BOD", "value": 55.0, "baku_mutu": 50.0, "unit": "mg/L", "status": "LANGGAR"},
+    {"company_id": "SPR-001", "company_name": "PT Kahatex Textile", "date": "2026-05-09", "parameter": "TSS", "value": 210.0, "baku_mutu": 200.0, "unit": "mg/L", "status": "LANGGAR"},
+    {"company_id": "SPR-002", "company_name": "PT Insan Sandang Internusa", "date": "2026-05-10", "parameter": "COD", "value": 98.0, "baku_mutu": 150.0, "unit": "mg/L", "status": "TAAT"},
+    {"company_id": "SPR-002", "company_name": "PT Insan Sandang Internusa", "date": "2026-05-10", "parameter": "BOD", "value": 28.0, "baku_mutu": 50.0, "unit": "mg/L", "status": "TAAT"},
+    {"company_id": "SPR-002", "company_name": "PT Insan Sandang Internusa", "date": "2026-05-10", "parameter": "TSS", "value": 145.0, "baku_mutu": 200.0, "unit": "mg/L", "status": "TAAT"},
+    {"company_id": "SPR-003", "company_name": "PT Daliatex Kusuma", "date": "2026-05-10", "parameter": "COD", "value": 225.0, "baku_mutu": 150.0, "unit": "mg/L", "status": "LANGGAR"},
+    {"company_id": "SPR-003", "company_name": "PT Daliatex Kusuma", "date": "2026-05-10", "parameter": "BOD", "value": 72.0, "baku_mutu": 50.0, "unit": "mg/L", "status": "LANGGAR"},
+    {"company_id": "SPR-003", "company_name": "PT Daliatex Kusuma", "date": "2026-05-10", "parameter": "TSS", "value": 310.0, "baku_mutu": 200.0, "unit": "mg/L", "status": "LANGGAR"},
+    {"company_id": "SPR-003", "company_name": "PT Daliatex Kusuma", "date": "2026-05-10", "parameter": "pH", "value": 5.1, "baku_mutu_min": 6.0, "baku_mutu_max": 9.0, "unit": "-", "status": "LANGGAR"},
+    {"company_id": "SPR-003", "company_name": "PT Daliatex Kusuma", "date": "2026-05-09", "parameter": "COD", "value": 198.0, "baku_mutu": 150.0, "unit": "mg/L", "status": "LANGGAR"},
+    {"company_id": "SPR-003", "company_name": "PT Daliatex Kusuma", "date": "2026-05-09", "parameter": "BOD", "value": 65.0, "baku_mutu": 50.0, "unit": "mg/L", "status": "LANGGAR"},
+    {"company_id": "SPR-004", "company_name": "PT Macrotex", "date": "2026-05-10", "parameter": "COD", "value": 112.0, "baku_mutu": 150.0, "unit": "mg/L", "status": "TAAT"},
+    {"company_id": "SPR-004", "company_name": "PT Macrotex", "date": "2026-05-10", "parameter": "BOD", "value": 38.0, "baku_mutu": 50.0, "unit": "mg/L", "status": "TAAT"},
+    {"company_id": "SPR-004", "company_name": "PT Macrotex", "date": "2026-05-10", "parameter": "TSS", "value": 178.0, "baku_mutu": 200.0, "unit": "mg/L", "status": "TAAT"},
+    {"company_id": "SPR-005", "company_name": "PT Five Star Textile", "date": "2026-05-10", "parameter": "COD", "value": 142.0, "baku_mutu": 150.0, "unit": "mg/L", "status": "TAAT"},
+    {"company_id": "SPR-005", "company_name": "PT Five Star Textile", "date": "2026-05-10", "parameter": "BOD", "value": 48.0, "baku_mutu": 50.0, "unit": "mg/L", "status": "TAAT"},
+    {"company_id": "SPR-005", "company_name": "PT Five Star Textile", "date": "2026-05-10", "parameter": "TSS", "value": 192.0, "baku_mutu": 200.0, "unit": "mg/L", "status": "TAAT"},
+    {"company_id": "SPR-006", "company_name": "PT Mega Textile", "date": "2026-05-10", "parameter": "COD", "value": 175.0, "baku_mutu": 150.0, "unit": "mg/L", "status": "LANGGAR"},
+    {"company_id": "SPR-006", "company_name": "PT Mega Textile", "date": "2026-05-10", "parameter": "BOD", "value": 52.0, "baku_mutu": 50.0, "unit": "mg/L", "status": "LANGGAR"},
+    {"company_id": "SPR-006", "company_name": "PT Mega Textile", "date": "2026-05-10", "parameter": "TSS", "value": 215.0, "baku_mutu": 200.0, "unit": "mg/L", "status": "LANGGAR"},
+    {"company_id": "SPR-007", "company_name": "PT Bumi Citra Permai", "date": "2026-05-10", "parameter": "COD", "value": 245.0, "baku_mutu": 100.0, "unit": "mg/L", "status": "LANGGAR"},
+    {"company_id": "SPR-007", "company_name": "PT Bumi Citra Permai", "date": "2026-05-10", "parameter": "BOD", "value": 35.0, "baku_mutu": 30.0, "unit": "mg/L", "status": "LANGGAR"},
+    {"company_id": "SPR-007", "company_name": "PT Bumi Citra Permai", "date": "2026-05-10", "parameter": "TSS", "value": 88.0, "baku_mutu": 100.0, "unit": "mg/L", "status": "TAAT"},
+    {"company_id": "SPR-007", "company_name": "PT Bumi Citra Permai", "date": "2026-05-10", "parameter": "pH", "value": 4.8, "baku_mutu_min": 6.0, "baku_mutu_max": 9.0, "unit": "-", "status": "LANGGAR"},
+    {"company_id": "SPR-008", "company_name": "PT Papertech Indonesia", "date": "2026-05-10", "parameter": "COD", "value": 135.0, "baku_mutu": 150.0, "unit": "mg/L", "status": "TAAT"},
+    {"company_id": "SPR-008", "company_name": "PT Papertech Indonesia", "date": "2026-05-10", "parameter": "BOD", "value": 45.0, "baku_mutu": 50.0, "unit": "mg/L", "status": "TAAT"},
+    {"company_id": "SPR-008", "company_name": "PT Papertech Indonesia", "date": "2026-05-10", "parameter": "TSS", "value": 165.0, "baku_mutu": 200.0, "unit": "mg/L", "status": "TAAT"}
+  ]
+}

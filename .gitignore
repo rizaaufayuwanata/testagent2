@@ -1,0 +1,13 @@
+# Secrets & credentials
+wqsa.env
+__pycache__/
+
+# Temp files
+temp_*.pdf
+agent_audit.log
+__pycache__/
+*.pyc
+
+# Python
+.venv/
+venv/

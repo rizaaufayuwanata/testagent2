@@ -1,0 +1,121 @@
+{
+  "metadata": {
+    "source": "Sparing Logger KLHK (DUMMY)",
+    "das": "Citarum",
+    "total_companies": 8
+  },
+  "data": [
+    {
+      "company_id": "SPR-001",
+      "company_name": "PT Kahatex Textile",
+      "outlet_name": "Outlet IPAL Utama",
+      "industry_type": "Tekstil & Pewarnaan",
+      "kabkot": "Kab. Bandung",
+      "kecamatan": "Majalaya",
+      "latitude": -7.0485,
+      "longitude": 107.7612,
+      "segment": "Majalaya-Sapan",
+      "upstream_station": "KLHK02",
+      "izin_buang": "SK-KLHK/2024/0821",
+      "status_aktif": true
+    },
+    {
+      "company_id": "SPR-002",
+      "company_name": "PT Insan Sandang Internusa",
+      "outlet_name": "Outlet IPAL-1",
+      "industry_type": "Tekstil",
+      "kabkot": "Kab. Bandung",
+      "kecamatan": "Majalaya",
+      "latitude": -7.0521,
+      "longitude": 107.7498,
+      "segment": "Majalaya-Sapan",
+      "upstream_station": "KLHK02",
+      "izin_buang": "SK-KLHK/2023/1145",
+      "status_aktif": true
+    },
+    {
+      "company_id": "SPR-003",
+      "company_name": "PT Daliatex Kusuma",
+      "outlet_name": "Outlet IPAL Timur",
+      "industry_type": "Tekstil & Finishing",
+      "kabkot": "Kab. Bandung",
+      "kecamatan": "Pameungpeuk",
+      "latitude": -6.9801,
+      "longitude": 107.5798,
+      "segment": "Rancamanyar-Nanjung",
+      "upstream_station": "KLHK09",
+      "izin_buang": "SK-KLHK/2024/0337",
+      "status_aktif": true
+    },
+    {
+      "company_id": "SPR-004",
+      "company_name": "PT Macrotex",
+      "outlet_name": "Outlet Utama",
+      "industry_type": "Tekstil Printing",
+      "kabkot": "Kab. Bandung",
+      "kecamatan": "Pameungpeuk",
+      "latitude": -6.9756,
+      "longitude": 107.5867,
+      "segment": "Rancamanyar-Nanjung",
+      "upstream_station": "KLHK09",
+      "izin_buang": "SK-KLHK/2023/0892",
+      "status_aktif": true
+    },
+    {
+      "company_id": "SPR-005",
+      "company_name": "PT Five Star Textile Indonesia",
+      "outlet_name": "Outlet IPAL Selatan",
+      "industry_type": "Tekstil",
+      "kabkot": "Kab. Bandung",
+      "kecamatan": "Baleendah",
+      "latitude": -7.0055,
+      "longitude": 107.6289,
+      "segment": "Sapan-Dayeuhkolot",
+      "upstream_station": "KLHK03",
+      "izin_buang": "SK-KLHK/2024/0456",
+      "status_aktif": true
+    },
+    {
+      "company_id": "SPR-006",
+      "company_name": "PT Mega Textile",
+      "outlet_name": "Outlet IPAL-A",
+      "industry_type": "Tekstil & Garmen",
+      "kabkot": "Kab. Bandung",
+      "kecamatan": "Bojongsoang",
+      "latitude": -6.9912,
+      "longitude": 107.6645,
+      "segment": "Tegalluar-Bojongsoang",
+      "upstream_station": "KLHK12",
+      "izin_buang": "SK-KLHK/2023/1278",
+      "status_aktif": true
+    },
+    {
+      "company_id": "SPR-007",
+      "company_name": "PT Bumi Citra Permai (Kimia)",
+      "outlet_name": "Outlet Limbah Cair",
+      "industry_type": "Kimia & Farmasi",
+      "kabkot": "Kab. Bandung",
+      "kecamatan": "Majalaya",
+      "latitude": -7.0467,
+      "longitude": 107.7578,
+      "segment": "Majalaya-Sapan",
+      "upstream_station": "KLHK02",
+      "izin_buang": "SK-KLHK/2024/0189",
+      "status_aktif": true
+    },
+    {
+      "company_id": "SPR-008",
+      "company_name": "PT Papertech Indonesia",
+      "outlet_name": "Outlet IPAL Barat",
+      "industry_type": "Pulp & Kertas",
+      "kabkot": "Kab. Bandung",
+      "kecamatan": "Bojongsoang",
+      "latitude": -6.9878,
+      "longitude": 107.6523,
+      "segment": "Tegalluar-Bojongsoang",
+      "upstream_station": "KLHK12",
+      "izin_buang": "SK-KLHK/2023/0567",
+      "status_aktif": true
+    }
+  ]
+}
