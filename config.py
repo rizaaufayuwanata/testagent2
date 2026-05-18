@@ -7,24 +7,31 @@ from dotenv import load_dotenv
 
 load_dotenv("wqsa.env")
 
-# ── API Keys (only OpenRouter + Telegram needed for local mode) ──────────────
+# ── API Keys ──────────────────────────────────────────────────────────────────
 OPENROUTER_API_KEY   = os.getenv("OPENROUTER_API_KEY")
 TELEGRAM_BOT_TOKEN   = os.getenv("TELEGRAM_BOT_TOKEN")
+ANTHROPIC_API_KEY    = os.getenv("ANTHROPIC_API_KEY", "")
 
-# ── Data Source API Keys / Endpoints (DISABLED for local mode) ───────────────
-# These are commented out — agent reads from dummy_data/ folder instead.
-# Uncomment and fill when connecting to real APIs.
-# ONLIMO_API_URL     = os.getenv("ONLIMO_API_URL", "")
-# ONLIMO_API_KEY     = os.getenv("ONLIMO_API_KEY", "")
-# SPARING_API_URL    = os.getenv("SPARING_API_URL", "")
-# SPARING_API_KEY    = os.getenv("SPARING_API_KEY", "")
-# IBEX_API_URL       = os.getenv("IBEX_API_URL", "")
-# IBEX_API_KEY       = os.getenv("IBEX_API_KEY", "")
-# SITALA_API_URL     = os.getenv("SITALA_API_URL", "")
-# SITALA_API_KEY     = os.getenv("SITALA_API_KEY", "")
-# ANTHROPIC_API_KEY  = os.getenv("ANTHROPIC_API_KEY", "")
+# ── Data Source API Endpoints ─────────────────────────────────────────────────
+ONLIMO_API_URL       = os.getenv("ONLIMO_API_URL", "")
+ONLIMO_API_KEY       = os.getenv("ONLIMO_API_KEY", "")
+SPARING_API_URL      = os.getenv("SPARING_API_URL", "")
+SPARING_API_KEY      = os.getenv("SPARING_API_KEY", "")
+SITALA_API_URL       = os.getenv("SITALA_API_URL", "")
+SITALA_API_KEY       = os.getenv("SITALA_API_KEY", "")
+BMKG_API_URL         = os.getenv("BMKG_API_URL", "https://api.bmkg.go.id/publik/prakiraan-cuaca")
+# Kode adm4 (BPS) lokasi yang dipantau BMKG — pisahkan dengan koma
+# Contoh: 32.04.15.2001,32.04.16.2003
+BMKG_ADM4_CODES      = [c.strip() for c in os.getenv("BMKG_ADM4_CODES", "").split(",") if c.strip()]
 
-# ── Local Data Directory ─────────────────────────────────────────────────────
+# ── MySQL Database ────────────────────────────────────────────────────────────
+MYSQL_HOST           = os.getenv("MYSQL_HOST", "localhost")
+MYSQL_PORT           = int(os.getenv("MYSQL_PORT", "3306"))
+MYSQL_USER           = os.getenv("MYSQL_USER", "root")
+MYSQL_PASSWORD       = os.getenv("MYSQL_PASSWORD", "")
+MYSQL_DATABASE       = os.getenv("MYSQL_DATABASE", "wqsa_db")
+
+# ── Local Data Directory (dummy fallback) ─────────────────────────────────────
 DUMMY_DATA_DIR       = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dummy_data")
 
 # ── Security ─────────────────────────────────────────────────────────────────
