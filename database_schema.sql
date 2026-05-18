@@ -314,14 +314,14 @@ CREATE TABLE IF NOT EXISTS sparing_logger (
 
     name                VARCHAR(200)    NOT NULL COMMENT 'Nama outlet/logger (field: name)',
     brand               VARCHAR(100)    DEFAULT NULL COMMENT 'Merek perangkat logger (field: brand)',
-    type                VARCHAR(100)    DEFAULT NULL COMMENT 'Tipe perangkat (field: type)',
+    type                VARCHAR(150)    DEFAULT NULL COMMENT 'Tipe perangkat (field: type)',
     model               VARCHAR(100)    DEFAULT NULL COMMENT 'Model perangkat (field: model)',
     serial_number       VARCHAR(100)    DEFAULT NULL COMMENT 'Nomor seri (field: serial_number)',
-    mac_address         VARCHAR(20)     DEFAULT NULL COMMENT 'MAC address perangkat (field: mac_address)',
-    waste_water_source  VARCHAR(200)    DEFAULT NULL COMMENT 'Sumber air limbah (field: waste_water_source)',
+    mac_address         VARCHAR(150)    DEFAULT NULL COMMENT 'MAC address perangkat (field: mac_address)',
+    waste_water_source  TEXT            DEFAULT NULL COMMENT 'Sumber air limbah (field: waste_water_source)',
 
-    latitude            DECIMAL(13, 10) DEFAULT NULL COMMENT 'Koordinat lat (field: coordinate[0])',
-    longitude           DECIMAL(13, 10) DEFAULT NULL COMMENT 'Koordinat lon (field: coordinate[1])',
+    latitude            FLOAT           DEFAULT NULL COMMENT 'Koordinat lat (field: coordinate[0])',
+    longitude           FLOAT           DEFAULT NULL COMMENT 'Koordinat lon (field: coordinate[1])',
 
     status              VARCHAR(20)     DEFAULT NULL COMMENT 'Status logger: VALID/INVALID dll (field: status)',
     logger_existing     TINYINT(1)      DEFAULT 1 COMMENT 'Flag logger masih terpasang (field: logger_existing)',
@@ -466,20 +466,20 @@ CREATE TABLE IF NOT EXISTS sitala_ika (
     kd_regional         TINYINT UNSIGNED DEFAULT NULL COMMENT 'Kode regional (field: kd_regional)',
 
     -- ── Indeks Aktual ──────────────────────────────────────────────────────────
-    ika                 DECIMAL(8, 6)   DEFAULT NULL COMMENT 'Indeks Kualitas Air aktual (field: ika)',
-    iku                 DECIMAL(14, 12) DEFAULT NULL COMMENT 'Indeks Kualitas Udara aktual (field: iku)',
-    ikl                 DECIMAL(14, 12) DEFAULT NULL COMMENT 'Indeks Kualitas Lahan aktual (field: ikl)',
-    ikal                DECIMAL(8, 4)   DEFAULT NULL COMMENT 'Indeks Kualitas Alam (field: ikal)',
-    ikeg                DECIMAL(8, 4)   DEFAULT NULL COMMENT 'Indeks Kualitas Ekosistem Gambut (field: ikeg) — sering null',
-    iklh                DECIMAL(14, 12) DEFAULT NULL COMMENT 'Indeks Kualitas Lingkungan Hidup (field: iklh)',
+    ika                 DECIMAL(6, 2)   DEFAULT NULL COMMENT 'Indeks Kualitas Air aktual (field: ika)',
+    iku                 DECIMAL(6, 2)   DEFAULT NULL COMMENT 'Indeks Kualitas Udara aktual (field: iku)',
+    ikl                 DECIMAL(6, 2)   DEFAULT NULL COMMENT 'Indeks Kualitas Lahan aktual (field: ikl)',
+    ikal                DECIMAL(6, 2)   DEFAULT NULL COMMENT 'Indeks Kualitas Alam (field: ikal)',
+    ikeg                DECIMAL(6, 2)   DEFAULT NULL COMMENT 'Indeks Kualitas Ekosistem Gambut (field: ikeg) — sering null',
+    iklh                DECIMAL(6, 2)   DEFAULT NULL COMMENT 'Indeks Kualitas Lingkungan Hidup (field: iklh)',
     jenis_indeks        TINYINT UNSIGNED DEFAULT 0 COMMENT 'Tipe perhitungan indeks (field: jenis_indeks)',
 
     -- ── Target RPJMN ──────────────────────────────────────────────────────────
-    target_iklh         DECIMAL(10, 5)  DEFAULT NULL COMMENT 'Target IKLH RPJMN (field: target)',
-    target_ika          DECIMAL(8, 5)   DEFAULT NULL COMMENT 'Target IKA RPJMN (field: target_ika)',
-    target_iku          DECIMAL(8, 5)   DEFAULT NULL COMMENT 'Target IKU RPJMN (field: target_iku)',
-    target_ikl          DECIMAL(8, 5)   DEFAULT NULL COMMENT 'Target IKL RPJMN (field: target_ikl)',
-    target_ikal         DECIMAL(8, 5)   DEFAULT NULL COMMENT 'Target IKAL RPJMN (field: target_ikal)',
+    target_iklh         DECIMAL(6, 2)   DEFAULT NULL COMMENT 'Target IKLH RPJMN (field: target)',
+    target_ika          DECIMAL(6, 2)   DEFAULT NULL COMMENT 'Target IKA RPJMN (field: target_ika)',
+    target_iku          DECIMAL(6, 2)   DEFAULT NULL COMMENT 'Target IKU RPJMN (field: target_iku)',
+    target_ikl          DECIMAL(6, 2)   DEFAULT NULL COMMENT 'Target IKL RPJMN (field: target_ikl)',
+    target_ikal         DECIMAL(6, 2)   DEFAULT NULL COMMENT 'Target IKAL RPJMN (field: target_ikal)',
 
     -- ── Indeks Risiko (IR) ─────────────────────────────────────────────────────
     ir_lb               DECIMAL(6, 2)   DEFAULT NULL COMMENT 'IR Lahan Baik (field: ir_lb)',

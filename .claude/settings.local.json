@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip show *)",
+      "Bash(python -c ' *)",
+      "Bash(python -c \"import etl; print\\('etl.py OK'\\)\")",
+      "Bash(python -c \"import etl; print\\('OK — ONLIMO_SECRET:', bool\\(etl.ONLIMO_SECRET\\), '| CLIENT_KEY:', bool\\(etl.ONLIMO_CLIENT_KEY\\)\\); from urllib.parse import urlsplit; print\\('_base_url test:', etl._base_url\\('https://example.com/api?page=1&foo=bar'\\)\\)\")",
+      "Bash(python etl.py --sitala)",
+      "Bash(mysql -u root wqsa_db -e ' *)",
+      "Bash(python etl.py --sparing --days 3)",
+      "Bash(python etl.py --bmkg)"
+    ]
+  }
+}

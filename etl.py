@@ -23,14 +23,20 @@ from typing import Any, Optional
 import pymysql
 import pymysql.cursors
 import requests
+import urllib3
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+from urllib.parse import urlsplit, urlunsplit
+
 from config import (
     MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE,
-    ONLIMO_API_URL, ONLIMO_API_KEY,
-    SPARING_API_URL, SPARING_API_KEY,
-    SITALA_API_URL, SITALA_API_KEY,
+    ONLIMO_STASIUN_URL, ONLIMO_MONITORING_URL, ONLIMO_STATUS_URL,
+    ONLIMO_API_KEY, ONLIMO_SECRET, ONLIMO_CLIENT_KEY,
+    SPARING_LOGGER_URL, SPARING_MONITORING_URL, SPARING_API_KEY,
+    SITALA_URL, SITALA_API_KEY,
     BMKG_API_URL, BMKG_ADM4_CODES,
     TARGET_DAS,
 )
@@ -98,6 +104,7 @@ def make_session() -> requests.Session:
     session.mount("https://", adapter)
     session.mount("http://", adapter)
     session.timeout = 30
+    session.verify = False  # beberapa server pemerintah pakai sertifikat self-signed
     return session
 
 
@@ -145,21 +152,71 @@ def _to_int(val: Any) -> Optional[int]:
         return None
 
 
+def _parse_coord(val: Any, is_lat: bool) -> Optional[float]:
+    """Parse a dirty coordinate value. Returns None if clearly invalid."""
+    if val is None:
+        return None
+    s = str(val).strip()
+    # Strip common non-numeric suffixes/prefixes
+    for ch in ["°", "deg", " "]:
+        s = s.replace(ch, "")
+    # European decimal comma
+    if "," in s and "." not in s:
+        s = s.replace(",", ".")
+    try:
+        f = float(s)
+    except ValueError:
+        return None
+    # Validate range
+    if is_lat and not (-90 <= f <= 90):
+        return None
+    if not is_lat and not (-180 <= f <= 180):
+        return None
+    return f
+
+
+def _base_url(url: str) -> str:
+    """Strip query string from a URL so ETL can supply its own params."""
+    parts = urlsplit(url)
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
+
+
+def _onlimo_headers() -> dict:
+    """Build Onlimo auth headers from all available credentials."""
+    h = {}
+    if ONLIMO_API_KEY:
+        h["Authorization"] = f"Bearer {ONLIMO_API_KEY}"
+    if ONLIMO_SECRET:
+        h["X-Secret"] = ONLIMO_SECRET
+    if ONLIMO_CLIENT_KEY:
+        h["Client-Key"] = ONLIMO_CLIENT_KEY
+    return h
+
+
+def _sparing_headers() -> dict:
+    """Build Sparing IBEX auth headers (member/key/secret, not Bearer)."""
+    return {
+        "member": "ibex",
+        "key": SPARING_API_KEY,
+        "secret": ONLIMO_SECRET,
+    }
+
+
 # =============================================================================
 # 1. ONLIMO — STASIUN
 # =============================================================================
 
 def sync_onlimo_stasiun(db: pymysql.Connection, session: requests.Session) -> int:
-    if not ONLIMO_API_URL:
-        logger.warning("ONLIMO_API_URL not set — skipping stasiun sync")
+    if not ONLIMO_STASIUN_URL:
+        logger.warning("ONLIMO_STASIUN_URL not set — skipping stasiun sync")
         return 0
 
-    endpoint = f"{ONLIMO_API_URL}/stasiun"
+    endpoint = _base_url(ONLIMO_STASIUN_URL)
     log_id = _sync_start(db, "onlimo_stasiun", endpoint)
     records = 0
 
     try:
-        headers = {"Authorization": f"Bearer {ONLIMO_API_KEY}"} if ONLIMO_API_KEY else {}
+        headers = _onlimo_headers()
         items = _paginate(session, endpoint, headers, {})
 
         sql = """
@@ -206,8 +263,8 @@ def sync_onlimo_stasiun(db: pymysql.Connection, session: requests.Session) -> in
 
 def sync_onlimo_monitoring(db: pymysql.Connection, session: requests.Session,
                            days_back: int = 3) -> int:
-    if not ONLIMO_API_URL:
-        logger.warning("ONLIMO_API_URL not set — skipping monitoring sync")
+    if not ONLIMO_MONITORING_URL:
+        logger.warning("ONLIMO_MONITORING_URL not set — skipping monitoring sync")
         return 0
 
     # Ambil daftar station_id dari DB
@@ -220,7 +277,7 @@ def sync_onlimo_monitoring(db: pymysql.Connection, session: requests.Session,
         return 0
 
     total_records = 0
-    headers = {"Authorization": f"Bearer {ONLIMO_API_KEY}"} if ONLIMO_API_KEY else {}
+    headers = _onlimo_headers()
 
     sql = """
         INSERT INTO onlimo_pembacaan (
@@ -261,12 +318,18 @@ def sync_onlimo_monitoring(db: pymysql.Connection, session: requests.Session,
             synced_at   = NOW()
     """
 
-    endpoint = f"{ONLIMO_API_URL}/monitoring"
+    endpoint = _base_url(ONLIMO_MONITORING_URL)
     log_id = _sync_start(db, "onlimo_monitoring", endpoint)
+    date_end = date.today().isoformat()
+    date_start = (date.today() - timedelta(days=days_back)).isoformat()
 
     try:
         for station_id in station_ids:
-            params = {"IDStasiun": station_id, "days": days_back}
+            params = {
+                "station_id": station_id,
+                "date_start": date_start,
+                "date_end": date_end,
+            }
             items = _paginate(session, endpoint, headers, params)
 
             with db.cursor() as cur:
@@ -323,8 +386,8 @@ def sync_onlimo_monitoring(db: pymysql.Connection, session: requests.Session,
 # =============================================================================
 
 def sync_onlimo_status(db: pymysql.Connection, session: requests.Session) -> int:
-    if not ONLIMO_API_URL:
-        logger.warning("ONLIMO_API_URL not set — skipping status sync")
+    if not ONLIMO_STATUS_URL:
+        logger.warning("ONLIMO_STATUS_URL not set — skipping status sync")
         return 0
 
     with db.cursor() as cur:
@@ -334,10 +397,11 @@ def sync_onlimo_status(db: pymysql.Connection, session: requests.Session) -> int
     if not station_ids:
         return 0
 
-    endpoint = f"{ONLIMO_API_URL}/status"
+    endpoint = _base_url(ONLIMO_STATUS_URL)
     log_id = _sync_start(db, "onlimo_status", endpoint)
-    headers = {"Authorization": f"Bearer {ONLIMO_API_KEY}"} if ONLIMO_API_KEY else {}
+    headers = _onlimo_headers()
     records = 0
+    today_str = date.today().isoformat()
 
     sql = """
         INSERT INTO onlimo_status (
@@ -359,7 +423,11 @@ def sync_onlimo_status(db: pymysql.Connection, session: requests.Session) -> int
 
     try:
         for station_id in station_ids:
-            resp = session.get(endpoint, headers=headers, params={"IDStasiun": station_id}, timeout=30)
+            resp = session.get(
+                endpoint, headers=headers,
+                params={"station_id": station_id, "date": today_str},
+                timeout=30,
+            )
             resp.raise_for_status()
             body = resp.json()
 
@@ -583,13 +651,13 @@ def sync_bmkg(db: pymysql.Connection, session: requests.Session) -> int:
 # =============================================================================
 
 def sync_sparing_logger(db: pymysql.Connection, session: requests.Session) -> int:
-    if not SPARING_API_URL:
-        logger.warning("SPARING_API_URL not set — skipping Sparing Logger sync")
+    if not SPARING_LOGGER_URL:
+        logger.warning("SPARING_LOGGER_URL not set — skipping Sparing Logger sync")
         return 0
 
-    endpoint = f"{SPARING_API_URL}/logger"
+    endpoint = _base_url(SPARING_LOGGER_URL)
     log_id = _sync_start(db, "sparing_logger", endpoint)
-    headers = {"Authorization": f"Bearer {SPARING_API_KEY}"} if SPARING_API_KEY else {}
+    headers = _sparing_headers()
     records = 0
 
     sql_industri = """
@@ -646,9 +714,9 @@ def sync_sparing_logger(db: pymysql.Connection, session: requests.Session) -> in
                         _to_int(ind.get("id_ppa")),
                     ))
 
-                coord = item.get("coordinate", [None, None])
-                lat = _to_float(coord[0]) if len(coord) > 0 else None
-                lon = _to_float(coord[1]) if len(coord) > 1 else None
+                coord = item.get("coordinate") or []
+                lat = _parse_coord(coord[0], is_lat=True)  if len(coord) > 0 else None
+                lon = _parse_coord(coord[1], is_lat=False) if len(coord) > 1 else None
 
                 cur.execute(sql_logger, (
                     item["id"], item.get("id_logger"),
@@ -705,17 +773,26 @@ def _calc_status_taat(value: Optional[float], param_name: str,
 
 def sync_sparing_monitoring(db: pymysql.Connection, session: requests.Session,
                             days_back: int = 3) -> int:
-    if not SPARING_API_URL:
-        logger.warning("SPARING_API_URL not set — skipping Sparing Monitoring sync")
+    if not SPARING_MONITORING_URL:
+        logger.warning("SPARING_MONITORING_URL not set — skipping Sparing Monitoring sync")
         return 0
 
-    endpoint = f"{SPARING_API_URL}/monitoring"
+    # Ambil semua id_logger dari DB (isian sync_sparing_logger)
+    with db.cursor() as cur:
+        cur.execute("SELECT id_logger FROM sparing_logger WHERE id_logger IS NOT NULL")
+        id_loggers = [r["id_logger"] for r in cur.fetchall()]
+
+    if not id_loggers:
+        logger.warning("No loggers in DB — run sync_sparing_logger first")
+        return 0
+
+    endpoint = _base_url(SPARING_MONITORING_URL)
     log_id = _sync_start(db, "sparing_monitoring", endpoint)
-    headers = {"Authorization": f"Bearer {SPARING_API_KEY}"} if SPARING_API_KEY else {}
+    headers = _sparing_headers()
     records = 0
 
-    date_from = (date.today() - timedelta(days=days_back)).isoformat()
-    params = {"date_from": date_from, "per_page": SPARING_MON_PAGE_SIZE, "page": 1}
+    date_start = (date.today() - timedelta(days=days_back)).isoformat()
+    date_end = date.today().isoformat()
 
     sql = """
         INSERT INTO sparing_monitoring (
@@ -742,62 +819,76 @@ def sync_sparing_monitoring(db: pymysql.Connection, session: requests.Session,
     """
 
     try:
-        while True:
-            resp = session.get(endpoint, headers=headers, params=params, timeout=30)
-            resp.raise_for_status()
-            body = resp.json()
-            data = body.get("data", {})
-            items = data.get("item", [])
-            if not items:
-                break
+        for id_logger in id_loggers:
+            page = 1
+            logger_records = 0
+            while True:
+                params = {
+                    "id_logger": id_logger,
+                    "date_start": date_start,
+                    "date_end": date_end,
+                    "per_page": SPARING_MON_PAGE_SIZE,
+                    "page": page,
+                }
+                resp = session.get(endpoint, headers=headers, params=params, timeout=30)
+                resp.raise_for_status()
+                body = resp.json()
+                data = body.get("data", {})
+                items = data.get("item", [])
+                if not items:
+                    break
 
-            with db.cursor() as cur:
-                for item in items:
-                    bm_info = item.get("parameter_bm", {}) or {}
-                    param = item.get("parameter", {}) or {}
-                    value = _to_float(item.get("value"))
-                    bm_min_use = _to_float(bm_info.get("bm_min_use"))
-                    bm_max_use = _to_float(bm_info.get("bm_max_use"))
-                    counter = _to_int(item.get("counter"))
-                    min_valid = _to_int(item.get("min_valid"))
-                    param_name = param.get("name", "")
+                with db.cursor() as cur:
+                    for item in items:
+                        bm_info = item.get("parameter_bm", {}) or {}
+                        param = item.get("parameter", {}) or {}
+                        value = _to_float(item.get("value"))
+                        bm_min_use = _to_float(bm_info.get("bm_min_use"))
+                        bm_max_use = _to_float(bm_info.get("bm_max_use"))
+                        counter = _to_int(item.get("counter"))
+                        min_valid = _to_int(item.get("min_valid"))
+                        param_name = param.get("name", "")
 
-                    status = _calc_status_taat(value, param_name, bm_min_use, bm_max_use, counter, min_valid)
+                        status = _calc_status_taat(value, param_name, bm_min_use, bm_max_use, counter, min_valid)
 
-                    updated_raw = item.get("updated_at", "")
-                    try:
-                        updated_dt = datetime.fromisoformat(updated_raw.replace("Z", "+00:00")) if updated_raw else None
-                    except ValueError:
-                        updated_dt = None
+                        updated_raw = item.get("updated_at", "")
+                        try:
+                            updated_dt = datetime.fromisoformat(updated_raw.replace("Z", "+00:00")) if updated_raw else None
+                        except ValueError:
+                            updated_dt = None
 
-                    cur.execute(sql, (
-                        item["id"],
-                        item.get("id_logger"),
-                        _to_int(item.get("id_logger_")),
-                        item.get("id_parameter"),
-                        item.get("reported_at"),
-                        counter,
-                        _to_float(item.get("total")),
-                        _to_float(item.get("average")),
-                        value,
-                        _safe(item.get("unit")),
-                        min_valid,
-                        _to_float(bm_info.get("bm")),
-                        _to_float(bm_info.get("bm_max")),
-                        bm_min_use,
-                        bm_max_use,
-                        param_name,
-                        status,
-                        updated_dt,
-                    ))
-                    records += 1
+                        cur.execute(sql, (
+                            item["id"],
+                            item.get("id_logger"),
+                            _to_int(item.get("id_logger_")),
+                            item.get("id_parameter"),
+                            item.get("reported_at"),
+                            counter,
+                            _to_float(item.get("total")),
+                            _to_float(item.get("average")),
+                            value,
+                            _safe(item.get("unit")),
+                            min_valid,
+                            _to_float(bm_info.get("bm")),
+                            _to_float(bm_info.get("bm_max")),
+                            bm_min_use,
+                            bm_max_use,
+                            param_name,
+                            status,
+                            updated_dt,
+                        ))
+                        logger_records += 1
 
-            db.commit()
+                db.commit()
 
-            last_page = data.get("last_page", 1)
-            if params["page"] >= last_page:
-                break
-            params["page"] += 1
+                last_page = data.get("last_page", 1)
+                if page >= last_page:
+                    break
+                page += 1
+
+            if logger_records:
+                logger.info(f"  {id_logger}: {logger_records} rows")
+            records += logger_records
 
         logger.info(f"sparing_monitoring: {records} upserted")
         _sync_end(db, log_id, "success", records)
@@ -814,12 +905,12 @@ def sync_sparing_monitoring(db: pymysql.Connection, session: requests.Session,
 # =============================================================================
 
 def sync_sitala(db: pymysql.Connection, session: requests.Session) -> int:
-    if not SITALA_API_URL:
-        logger.warning("SITALA_API_URL not set — skipping SITALA sync")
+    if not SITALA_URL:
+        logger.warning("SITALA_URL not set — skipping SITALA sync")
         return 0
 
-    log_id = _sync_start(db, "sitala", SITALA_API_URL)
-    headers = {"Authorization": f"Bearer {SITALA_API_KEY}"} if SITALA_API_KEY else {}
+    log_id = _sync_start(db, "sitala", SITALA_URL)
+    headers = {"X-Api-Key": SITALA_API_KEY} if SITALA_API_KEY else {}
     records = 0
 
     sql = """
@@ -864,76 +955,63 @@ def sync_sitala(db: pymysql.Connection, session: requests.Session) -> int:
     """
 
     try:
-        page = 1
-        while True:
-            resp = session.get(SITALA_API_URL, headers=headers,
-                               params={"page": page, "per_page": ETL_PAGE_SIZE}, timeout=30)
-            resp.raise_for_status()
-            body = resp.json()
+        # SITALA returns all records in one shot — pagination params break the response
+        resp = session.get(SITALA_URL, headers=headers, timeout=60)
+        resp.raise_for_status()
+        body = resp.json()
 
-            # SITALA uses rows.kabkota (not data.item)
-            rows = body.get("rows", {})
-            items = rows.get("kabkota", [])
-            if not items:
-                break
+        items = body.get("rows", {}).get("kabkota", [])
+        logger.info(f"sitala: {len(items)} kabkota items received")
 
-            with db.cursor() as cur:
-                for item in items:
-                    # crdate/chdate adalah Unix timestamp
-                    crdate_ts = _to_int(item.get("crdate"))
-                    chdate_ts = _to_int(item.get("chdate"))
-                    crdate_dt = datetime.fromtimestamp(crdate_ts) if crdate_ts else None
-                    chdate_dt = datetime.fromtimestamp(chdate_ts) if chdate_ts else None
+        with db.cursor() as cur:
+            for item in items:
+                crdate_ts = _to_int(item.get("crdate"))
+                chdate_ts = _to_int(item.get("chdate"))
+                crdate_dt = datetime.fromtimestamp(crdate_ts) if crdate_ts else None
+                chdate_dt = datetime.fromtimestamp(chdate_ts) if chdate_ts else None
 
-                    cur.execute(sql, (
-                        _to_int(item["uid_indeks_history"]),
-                        _to_int(item.get("uid_provinsi")),
-                        _to_int(item.get("uid_kabkota")),
-                        _to_int(item.get("tahun")),
-                        item.get("nama_provinsi"), item.get("nama_kabkota"),
-                        _to_int(item.get("kd_regional")),
-                        _to_float(item.get("ika")),
-                        _to_float(item.get("iku")),
-                        _to_float(item.get("ikl")),
-                        _to_float(item.get("ikal")),
-                        _to_float(item.get("ikeg")),
-                        _to_float(item.get("iklh")),
-                        _to_int(item.get("jenis_indeks", 0)),
-                        _to_float(item.get("target")),
-                        _to_float(item.get("target_ika")),
-                        _to_float(item.get("target_iku")),
-                        _to_float(item.get("target_ikl")),
-                        _to_float(item.get("target_ikal")),
-                        _to_float(item.get("ir_lb")),
-                        _to_float(item.get("ir_kb")),
-                        _to_float(item.get("ir_ih")),
-                        _to_float(item.get("ir_pl")),
-                        _to_float(item.get("ir_gl")),
-                        _to_float(item.get("ir_lh")),
-                        _safe(item.get("rekomendasi_ika")),
-                        _safe(item.get("rekomendasi_iku")),
-                        _safe(item.get("rekomendasi_ikl")),
-                        _safe(item.get("rekomendasi_ikal")),
-                        _safe(item.get("rekomendasi_iklh")),
-                        _safe(item.get("peta_sebaran_iku")),
-                        _safe(item.get("peta_sebaran_ika")),
-                        _safe(item.get("peta_sebaran_ikl")),
-                        _to_int(item.get("gambut_provinsi")),
-                        _to_int(item.get("gambut_kabkota")),
-                        _to_int(item.get("deleted", 0)),
-                        _to_int(item.get("hidden", 0)),
-                        crdate_dt, chdate_dt,
-                    ))
-                    records += 1
+                cur.execute(sql, (
+                    _to_int(item["uid_indeks_history"]),
+                    _to_int(item.get("uid_provinsi")),
+                    _to_int(item.get("uid_kabkota")),
+                    _to_int(item.get("tahun")),
+                    item.get("nama_provinsi"), item.get("nama_kabkota"),
+                    _to_int(item.get("kd_regional")),
+                    _to_float(item.get("ika")),
+                    _to_float(item.get("iku")),
+                    _to_float(item.get("ikl")),
+                    _to_float(item.get("ikal")),
+                    _to_float(item.get("ikeg")),
+                    _to_float(item.get("iklh")),
+                    _to_int(item.get("jenis_indeks", 0)),
+                    _to_float(item.get("target")),
+                    _to_float(item.get("target_ika")),
+                    _to_float(item.get("target_iku")),
+                    _to_float(item.get("target_ikl")),
+                    _to_float(item.get("target_ikal")),
+                    _to_float(item.get("ir_lb")),
+                    _to_float(item.get("ir_kb")),
+                    _to_float(item.get("ir_ih")),
+                    _to_float(item.get("ir_pl")),
+                    _to_float(item.get("ir_gl")),
+                    _to_float(item.get("ir_lh")),
+                    _safe(item.get("rekomendasi_ika")),
+                    _safe(item.get("rekomendasi_iku")),
+                    _safe(item.get("rekomendasi_ikl")),
+                    _safe(item.get("rekomendasi_ikal")),
+                    _safe(item.get("rekomendasi_iklh")),
+                    _safe(item.get("peta_sebaran_iku")),
+                    _safe(item.get("peta_sebaran_ika")),
+                    _safe(item.get("peta_sebaran_ikl")),
+                    _to_int(item.get("gambut_provinsi")),
+                    _to_int(item.get("gambut_kabkota")),
+                    _to_int(item.get("deleted", 0)),
+                    _to_int(item.get("hidden", 0)),
+                    crdate_dt, chdate_dt,
+                ))
+                records += 1
 
-            db.commit()
-
-            # SITALA total / per_page pagination
-            total = body.get("total", 0)
-            per_page = ETL_PAGE_SIZE
-            if page * per_page >= total:
-                break
-            page += 1
+        db.commit()
 
         # Hitung trend_yoy (IKA tahun ini - IKA tahun lalu) per kabkota
         _compute_sitala_trend(db)

@@ -13,15 +13,25 @@ TELEGRAM_BOT_TOKEN   = os.getenv("TELEGRAM_BOT_TOKEN")
 ANTHROPIC_API_KEY    = os.getenv("ANTHROPIC_API_KEY", "")
 
 # ── Data Source API Endpoints ─────────────────────────────────────────────────
-ONLIMO_API_URL       = os.getenv("ONLIMO_API_URL", "")
+# Onlimo KLHK — 3 endpoint terpisah
+ONLIMO_STASIUN_URL   = os.getenv("ONLIMO_STASIUN_URL", "")
+ONLIMO_MONITORING_URL= os.getenv("ONLIMO_MONITORING_URL", "")
+ONLIMO_STATUS_URL    = os.getenv("ONLIMO_STATUS_URL", "")
 ONLIMO_API_KEY       = os.getenv("ONLIMO_API_KEY", "")
-SPARING_API_URL      = os.getenv("SPARING_API_URL", "")
+ONLIMO_SECRET        = os.getenv("ONLIMO_SECRET", "")
+ONLIMO_CLIENT_KEY    = os.getenv("ONLIMO_CLIENT-KEY", "")
+
+# Sparing KLHK — 2 endpoint terpisah
+SPARING_LOGGER_URL   = os.getenv("SPARING_LOGGER_URL", "")
+SPARING_MONITORING_URL = os.getenv("SPARING_MONITORING_URL", "")
 SPARING_API_KEY      = os.getenv("SPARING_API_KEY", "")
-SITALA_API_URL       = os.getenv("SITALA_API_URL", "")
+
+# SITALA KLHK
+SITALA_URL           = os.getenv("SITALA_URL", "")
 SITALA_API_KEY       = os.getenv("SITALA_API_KEY", "")
+
+# BMKG (free)
 BMKG_API_URL         = os.getenv("BMKG_API_URL", "https://api.bmkg.go.id/publik/prakiraan-cuaca")
-# Kode adm4 (BPS) lokasi yang dipantau BMKG — pisahkan dengan koma
-# Contoh: 32.04.15.2001,32.04.16.2003
 BMKG_ADM4_CODES      = [c.strip() for c in os.getenv("BMKG_ADM4_CODES", "").split(",") if c.strip()]
 
 # ── MySQL Database ────────────────────────────────────────────────────────────
