@@ -1,9 +1,10 @@
+
 # ─────────────────────────────────────────────────────────────────────────────
-# tools.py — WQSA Tools (MySQL-backed Mode)
+# tools.py — WQSA Tools (Local File Mode)
 # ─────────────────────────────────────────────────────────────────────────────
-# All data tools query MySQL via data_layer.py.
-# generate_rec() uses OpenRouter.
-# Analysis tools are pure logic — no external dependencies.
+# All data tools read from dummy_data/ folder.
+# generate_rec() uses OpenRouter (same as agent) instead of Anthropic API.
+# All analysis tools work as-is — pure logic, no external deps.
 # ─────────────────────────────────────────────────────────────────────────────
 
 import json
@@ -27,68 +28,56 @@ from data_layer import (
 
 logger = logging.getLogger(__name__)
 
-# ── OpenRouter client — lazy init to avoid crash when key not yet loaded ─────
-_openrouter = None
-
-
-def _get_openrouter() -> OpenAI:
-    global _openrouter
-    if _openrouter is None:
-        key = OPENROUTER_API_KEY
-        if not key:
-            raise RuntimeError(
-                "OPENROUTER_API_KEY is not set. "
-                "Make sure wqsa.env exists and contains OPENROUTER_API_KEY=sk-or-..."
-            )
-        _openrouter = OpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=key,
-        )
-    return _openrouter
-
+# ── OpenRouter client (shared with bot.py) ───────────────────────────────────
+openrouter = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=OPENROUTER_API_KEY,
+)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# DATA TOOLS (query MySQL via data_layer)
+# DATA TOOLS (read from local files)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def query_onlimo(station_id: str = "", das: str = TARGET_DAS) -> str:
-    """Read Onlimo station data from database."""
+    """Read Onlimo station data from local dummy file."""
     data = get_onlimo_data(station_id, das)
     return json.dumps(data, ensure_ascii=False, indent=2)
 
 
 def get_bmkg_rain(location: str = "", lat: float = 0.0, lon: float = 0.0) -> str:
-    """Read rainfall data from database."""
+    """Read rainfall data from local dummy file."""
     data = get_rainfall_data(location, lat, lon)
     return json.dumps(data, ensure_ascii=False, indent=2)
 
 
 def query_sparing_logger(das: str = TARGET_DAS, district: str = "") -> str:
-    """Read Sparing Logger data from database."""
+    """Read Sparing Logger data from local dummy file."""
     data = get_sparing_logger_data(das, district)
     return json.dumps(data, ensure_ascii=False, indent=2)
 
 
 def query_sparing_monitoring(company_id: str = "", days: int = 3) -> str:
-    """Read Sparing Monitoring data from database."""
+    """Read Sparing Monitoring data from local dummy file."""
     data = get_sparing_monitoring_data(company_id, days)
     return json.dumps(data, ensure_ascii=False, indent=2)
 
 
 def query_sitala(district: str = TARGET_REGION) -> str:
-    """Read SITALA IKA data from database."""
+    """Read SITALA IKA data from local dummy file."""
     data = get_sitala_data(district)
     return json.dumps(data, ensure_ascii=False, indent=2)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# GENERATE RECOMMENDATION (via OpenRouter)
+# GENERATE RECOMMENDATION (via OpenRouter, not Anthropic directly)
 # ─────────────────────────────────────────────────────────────────────────────
+# NOTE: In production, this would call Anthropic Claude API directly.
+# For local testing, we route through OpenRouter using the same agent model.
 
 def generate_rec(context: str) -> str:
-    """Generate recommendation using OpenRouter."""
+    """Generate recommendation using OpenRouter (local mode)."""
     try:
-        response = _get_openrouter().chat.completions.create(
+        response = openrouter.chat.completions.create(
             model=AGENT_MODEL,
             messages=[
                 {"role": "system", "content": f"""Kamu adalah ahli lingkungan hidup dan analis kualitas air sungai Indonesia.
@@ -226,12 +215,7 @@ def evaluate_rainfall_branching(rainfall_data: str) -> str:
 
 
 def check_sparing_compliance(monitoring_data: str) -> str:
-    """Check Sparing monitoring data against baku mutu.
-
-    Supports both:
-    - Pre-computed status_taat from ETL (preferred)
-    - Manual value vs baku_mutu comparison (fallback)
-    """
+    """Check Sparing monitoring data against baku mutu."""
     try:
         data = json.loads(monitoring_data) if isinstance(monitoring_data, str) else monitoring_data
         if not isinstance(data, list):
@@ -241,34 +225,22 @@ def check_sparing_compliance(monitoring_data: str) -> str:
         for record in data:
             value = safe_float(record.get("value"))
             bm = safe_float(record.get("baku_mutu"))
-            bm_min = safe_float(record.get("baku_mutu_min"))
             param = record.get("parameter", "unknown")
             company = record.get("company_name", record.get("company_id", "unknown"))
 
-            # Use pre-computed status from ETL if available
-            pre_status = record.get("status")
-            if pre_status in ("TAAT", "LANGGAR"):
-                is_ok = pre_status == "TAAT"
-            elif bm > 0:
-                # pH uses range check (min <= value <= max)
-                if param.lower() == "ph" and bm_min > 0:
-                    is_ok = bm_min <= value <= bm
-                else:
-                    is_ok = value <= bm
-            else:
-                continue  # No baku mutu to compare against
-
-            entry = {
-                "company": company, "parameter": param,
-                "value": value, "baku_mutu": bm,
-                "unit": record.get("unit", "mg/L"),
-                "status": "TAAT" if is_ok else "LANGGAR",
-                "pct_of_bm": round((value / bm) * 100, 1) if bm > 0 else 0,
-                "date": record.get("date", "N/A"),
-            }
-            results.append(entry)
-            if not is_ok:
-                violations.append(entry)
+            if bm > 0:
+                is_ok = value <= bm
+                entry = {
+                    "company": company, "parameter": param,
+                    "value": value, "baku_mutu": bm,
+                    "unit": record.get("unit", "mg/L"),
+                    "status": "TAAT" if is_ok else "LANGGAR",
+                    "pct_of_bm": round((value / bm) * 100, 1),
+                    "date": record.get("date", "N/A"),
+                }
+                results.append(entry)
+                if not is_ok:
+                    violations.append(entry)
 
         return json.dumps({
             "total_checked": len(results),
@@ -313,7 +285,7 @@ def calculate_ika_gap(sitala_data: str) -> str:
 
 
 def log_anomaly_to_db(anomaly_json: str) -> str:
-    """Save anomaly to MySQL anomaly_log table."""
+    """Save anomaly to local JSON file (replaces MySQL)."""
     try:
         data = json.loads(anomaly_json) if isinstance(anomaly_json, str) else anomaly_json
         return log_anomaly(data)
@@ -335,7 +307,7 @@ TOOLS = [
     }},
     {"type": "function", "function": {
         "name": "query_onlimo",
-        "description": "Query Onlimo KLHK station data from database: water quality index, status, COD/BOD/TSS/DO/pH. Call this first in Step 1. Leave station_id empty to get all stations.",
+        "description": "Read Onlimo KLHK station data: water quality index, status, COD/BOD/TSS/DO/pH. Call this first in Step 1. Leave station_id empty to get all stations.",
         "parameters": {"type": "object", "properties": {
             "station_id": {"type": "string", "description": "Station ID (e.g. 'KLHK02'). Empty = all stations."},
             "das": {"type": "string", "description": f"DAS name. Default: {TARGET_DAS}"}
@@ -343,41 +315,34 @@ TOOLS = [
     }},
     {"type": "function", "function": {
         "name": "get_bmkg_rain",
-        "description": "Get BMKG rainfall data from database. Used in Step 3 branching: if total > 50mm/24h → LIMPASAN → STOP. If low → continue Step 4.",
+        "description": "Get rainfall data. Used in Step 3 branching: if tp > 50mm/24h → LIMPASAN → STOP. If low → continue Step 4.",
         "parameters": {"type": "object", "properties": {
-            "location": {"type": "string", "description": "Location name (kecamatan/desa/kotkab)"},
+            "location": {"type": "string", "description": "Location name (kelurahan/kecamatan)"},
             "lat": {"type": "number", "description": "Latitude"},
             "lon": {"type": "number", "description": "Longitude"}
         }}
     }},
     {"type": "function", "function": {
         "name": "query_sparing_logger",
-        "description": (
-            "Get Sparing Logger data from database: outlet IPAL locations and industries. "
-            "Used in Step 4. Results contain 'id_logger' field — use this value when calling "
-            "query_sparing_monitoring() to get monitoring data for a specific logger."
-        ),
+        "description": "Get Sparing Logger data: outlet IPAL locations and industries upstream. Used in Step 4.",
         "parameters": {"type": "object", "properties": {
             "das": {"type": "string", "description": f"DAS name. Default: {TARGET_DAS}"},
-            "district": {"type": "string", "description": "Kabupaten/kota or kecamatan name to filter (matched against industry address)"}
+            "district": {"type": "string", "description": "Kabupaten/kota or kecamatan to filter"}
         }}
     }},
     {"type": "function", "function": {
         "name": "query_sparing_monitoring",
-        "description": (
-            "Get Sparing Monitoring data from database: daily parameter values vs baku mutu for a logger. "
-            "Used in Step 4. Pass the 'id_logger' value from query_sparing_logger() results as company_id."
-        ),
+        "description": "Get Sparing Monitoring data: daily parameter values vs baku mutu for a company. Used in Step 4.",
         "parameters": {"type": "object", "properties": {
-            "company_id": {"type": "string", "description": "Logger ID ('id_logger' field from query_sparing_logger results)"},
+            "company_id": {"type": "string", "description": "Company ID from Sparing Logger (e.g. 'SPR-001')"},
             "days": {"type": "integer", "description": "Days of data. Default: 3"}
         }}
     }},
     {"type": "function", "function": {
         "name": "query_sitala",
-        "description": "Get SITALA IKA data from database: water quality index per kabupaten/kota vs RPJMN target. Used in Step 5.",
+        "description": "Get SITALA IKA data: water quality index per kabupaten/kota vs RPJMN target. Used in Step 5.",
         "parameters": {"type": "object", "properties": {
-            "district": {"type": "string", "description": f"Kabupaten/kota name. Default: {TARGET_REGION}"}
+            "district": {"type": "string", "description": f"Kabupaten/kota. Default: {TARGET_REGION}"}
         }}
     }},
     {"type": "function", "function": {
@@ -404,14 +369,14 @@ TOOLS = [
     }},
     {"type": "function", "function": {
         "name": "evaluate_rainfall_branching",
-        "description": "Step 3 branching: total_rainfall > 50mm/24h → LIMPASAN → STOP. Else continue to Step 4.",
+        "description": "Step 3 branching: tp > 50mm/24h → LIMPASAN → STOP. Else continue to Step 4.",
         "parameters": {"type": "object", "properties": {
             "rainfall_data": {"type": "string", "description": "JSON string of rainfall data"}
         }, "required": ["rainfall_data"]}
     }},
     {"type": "function", "function": {
         "name": "check_sparing_compliance",
-        "description": "Check monitoring values vs baku mutu. Returns TAAT or LANGGAR per parameter. Supports pre-computed status_taat from ETL.",
+        "description": "Check monitoring values vs baku mutu. Returns TAAT or LANGGAR per parameter.",
         "parameters": {"type": "object", "properties": {
             "monitoring_data": {"type": "string", "description": "JSON string of monitoring data"}
         }, "required": ["monitoring_data"]}
@@ -425,7 +390,7 @@ TOOLS = [
     }},
     {"type": "function", "function": {
         "name": "log_anomaly_to_db",
-        "description": "Save anomaly results to MySQL anomaly_log table for historical tracking.",
+        "description": "Save anomaly results to local log file for historical tracking.",
         "parameters": {"type": "object", "properties": {
             "anomaly_json": {"type": "string", "description": "JSON string of anomaly details"}
         }, "required": ["anomaly_json"]}

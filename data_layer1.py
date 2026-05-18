@@ -1,3 +1,4 @@
+
 # =============================================================================
 # data_layer.py — MySQL-backed Data Layer for WQSA Agent
 # =============================================================================
@@ -323,7 +324,7 @@ def get_sparing_logger_data(das: str = "", district: str = "") -> list[dict]:
 
 def _normalize_sparing_logger(row: dict) -> dict:
     return {
-        "company_id":       row.get("id_logger") or str(row.get("logger_id")),
+        "company_id":       str(row.get("logger_id")),
         "id_logger":        row.get("id_logger"),
         "company_name":     row.get("company_name"),
         "outlet_name":      row.get("outlet_name"),

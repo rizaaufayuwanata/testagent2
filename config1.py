@@ -69,7 +69,7 @@ URGENCY_LEVELS = {
 }
 
 # ── Agentic Loop ─────────────────────────────────────────────────────────────
-MAX_AGENT_STEPS      = 25
+MAX_AGENT_STEPS      = 100
 CACHE_TTL_HOURS      = 72
 
 # ── Anomaly Log File (replaces MySQL in local mode) ──────────────────────────

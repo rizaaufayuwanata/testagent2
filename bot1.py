@@ -1,8 +1,8 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# bot.py — WQSA Telegram Bot (MySQL-backed Mode)
+# bot.py — WQSA Telegram Bot (Local File Mode)
 # ─────────────────────────────────────────────────────────────────────────────
-# Reads from MySQL (wqsa_db) via data_layer.py.
-# Needs: OpenRouter API key + Telegram bot token + MySQL credentials.
+# Reads from dummy_data/ folder. No MySQL. No Anthropic API.
+# Only needs: OpenRouter API key + Telegram bot token.
 # ─────────────────────────────────────────────────────────────────────────────
 
 import os
@@ -23,8 +23,7 @@ from config import (
     OPENROUTER_API_KEY, TELEGRAM_BOT_TOKEN, AGENT_MODEL,
     ALLOWED_DEVICES, ALLOWED_USER_IDS, MASTER_PASSWORD,
     SESSION_TIMEOUT, RATE_LIMIT_SECONDS, MAX_AGENT_STEPS,
-    TARGET_DAS, TARGET_REGION,
-    MYSQL_HOST, MYSQL_PORT, MYSQL_DATABASE,
+    TARGET_DAS, TARGET_REGION, DUMMY_DATA_DIR,
 )
 from tools import TOOLS, TOOL_FUNCTIONS
 
@@ -51,24 +50,11 @@ def check_device():
 
 check_device()
 
-# ── OpenRouter Client (lazy — only connects when first message arrives) ──────
-_openrouter = None
-
-
-def _get_openrouter() -> OpenAI:
-    global _openrouter
-    if _openrouter is None:
-        key = OPENROUTER_API_KEY
-        if not key:
-            raise RuntimeError(
-                "OPENROUTER_API_KEY is not set. "
-                "Make sure wqsa.env exists and contains OPENROUTER_API_KEY=sk-or-..."
-            )
-        _openrouter = OpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=key,
-        )
-    return _openrouter
+# ── OpenRouter Client ────────────────────────────────────────────────────────
+openrouter = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=OPENROUTER_API_KEY,
+)
 
 # ── Rate Limiting ────────────────────────────────────────────────────────────
 user_last_message = {}
@@ -80,7 +66,7 @@ user_last_message = {}
 SYSTEM_PROMPT = f"""Kamu adalah Water Quality Status Decision Support Agent (WQSA) — sistem Agentic AI untuk memantau kualitas air sungai di DAS {TARGET_DAS}, {TARGET_REGION}.
 
 == MODE ==
-MySQL-backed mode — membaca data dari database wqsa_db.
+Saat ini berjalan dalam LOCAL MODE — membaca data dari file lokal, bukan API.
 
 == TUJUAN ==
 Secara otonom mendeteksi anomali indeks mutu air pada stasiun Onlimo KLHK, mengidentifikasi sumber pencemar melalui reasoning kausal multi-langkah, dan menghasilkan rekomendasi tindakan.
@@ -106,22 +92,20 @@ Selalu mulai dengan think() untuk merencanakan.
 - JIKA rendah → lanjut Step 4
 
 **Step 4 — Korelasi Sparing**
-- query_sparing_logger(district=...) → cari industri di sekitar stasiun anomali
-- Dari hasil, ambil field 'id_logger' per industri
-- query_sparing_monitoring(company_id=id_logger) per industri
+- query_sparing_logger() → cari industri upstream
+- query_sparing_monitoring(company_id) per industri
 - check_sparing_compliance() → TAAT/LANGGAR
 
 **Step 5 — IKA + Rekomendasi**
 - query_sitala() → IKA aktual vs target
 - calculate_ika_gap()
 - generate_rec(full_context) → laporan final
-- log_anomaly_to_db() → simpan ke database
+- log_anomaly_to_db() → simpan ke file
 
 == ATURAN ==
 - SELALU mulai dengan think()
 - SELALU ikuti urutan Step 1→2→3→4→5
 - Step 3 = BRANCHING — jika limpasan, BERHENTI
-- Di Step 4, gunakan 'id_logger' dari query_sparing_logger() sebagai company_id di query_sparing_monitoring()
 - Gunakan Bahasa Indonesia untuk output akhir
 - Laporkan setiap action yang diambil
 
@@ -143,7 +127,7 @@ def run_agent(user_message: str, context_data: ContextTypes.DEFAULT_TYPE) -> str
     step_counter = 0
 
     for step in range(MAX_AGENT_STEPS):
-        response = _get_openrouter().chat.completions.create(
+        response = openrouter.chat.completions.create(
             model=AGENT_MODEL,
             messages=messages,
             tools=TOOLS,
@@ -250,7 +234,7 @@ async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         f"🌊 WQSA — Water Quality Decision Support Agent\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"🏞️ DAS: {TARGET_DAS} | 📍 {TARGET_REGION}\n"
-        f"🗄️ Mode: MySQL ({MYSQL_DATABASE}@{MYSQL_HOST})\n\n"
+        f"📂 Mode: LOCAL (dummy data)\n\n"
         f"Kemampuan:\n"
         f"📊 Deteksi anomali kualitas air\n"
         f"🔬 Analisis profil pencemar (COD/BOD)\n"
@@ -293,81 +277,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STARTUP CHECK — Verify MySQL connectivity
-# ─────────────────────────────────────────────────────────────────────────────
-
-def check_mysql():
-    """Test MySQL connection at startup."""
-    try:
-        import pymysql
-        conn = pymysql.connect(
-            host=MYSQL_HOST,
-            port=MYSQL_PORT,
-            user=os.getenv("MYSQL_USER", "root"),
-            password=os.getenv("MYSQL_PASSWORD", ""),
-            database=MYSQL_DATABASE,
-            connect_timeout=5,
-        )
-        with conn.cursor() as cur:
-            # Check that key tables/views exist
-            cur.execute("SHOW TABLES")
-            tables = {row[0] for row in cur.fetchall()}
-
-        conn.close()
-
-        required_tables = [
-            "onlimo_stasiun", "onlimo_pembacaan", "onlimo_status",
-            "bmkg_lokasi", "bmkg_prakiraan", "bmkg_summary_harian",
-            "sparing_industri", "sparing_logger", "sparing_monitoring",
-            "sitala_ika", "anomaly_log",
-        ]
-        required_views = [
-            "v_onlimo_terbaru", "v_bmkg_terbaru", "v_sitala_terbaru",
-        ]
-
-        all_ok = True
-        for t in required_tables:
-            if t in tables:
-                print(f"  ✅ {t}")
-            else:
-                print(f"  ❌ {t} — MISSING!")
-                all_ok = False
-
-        for v in required_views:
-            if v in tables:  # SHOW TABLES includes views
-                print(f"  ✅ {v} (view)")
-            else:
-                print(f"  ❌ {v} (view) — MISSING!")
-                all_ok = False
-
-        return all_ok
-
-    except Exception as e:
-        print(f"  ❌ MySQL connection failed: {e}")
-        return False
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # MAIN
 # ─────────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     print("🌊 WQSA — Water Quality Decision Support Agent")
     print(f"🏞️  DAS: {TARGET_DAS} | Region: {TARGET_REGION}")
-    print(f"🗄️  Database: {MYSQL_DATABASE}@{MYSQL_HOST}:{MYSQL_PORT}")
+    print(f"📂 Data: {DUMMY_DATA_DIR}")
     print("━" * 50)
 
-    db_ok = check_mysql()
-    if not db_ok:
-        print("\n⚠️  Some tables/views are missing — run database_schema.sql first.")
-        print("   Then run etl.py to populate data.")
-        print("   Bot will still start, but queries may fail.\n")
+    # Verify dummy data exists
+    required = ["onlimo_stations.json", "bmkg_rainfall.json",
+                "sparing_logger.json", "sparing_monitoring.json", "sitala_ika.json"]
+    for f in required:
+        path = os.path.join(DUMMY_DATA_DIR, f)
+        if os.path.exists(path):
+            print(f"  ✅ {f}")
+        else:
+            print(f"  ❌ {f} — MISSING!")
 
     print("━" * 50)
-
-    if MAX_AGENT_STEPS > 30:
-        print(f"⚠️  MAX_AGENT_STEPS={MAX_AGENT_STEPS} — consider lowering to ~25 during testing")
-
     print("🤖 Starting Telegram bot...")
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", handle_start))
