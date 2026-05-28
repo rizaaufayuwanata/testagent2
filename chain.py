@@ -1,21 +1,12 @@
-# ─────────────────────────────────────────────────────────────────────────────
-# chain.py — Multi-Agent Chain Orchestrator for WQSA
-# ─────────────────────────────────────────────────────────────────────────────
-#
-# Three phases:
-#
-#   Phase 1 (Python, deterministic)
-#     Fetch ALL raw data from MySQL — stations, rainfall, sparing, SITALA.
-#     No LLM involved. Build a raw_data_bundle dict.
-#
-#   Phase 2 (DataEvaluatorAgent — agentic loop)
-#     Receives raw_data_bundle. Calls analysis tools iteratively.
-#     Cross-correlates evidence. Outputs structured EvaluationResult JSON.
-#
-#   Phase 3 (AnalyticalAgent — single LLM call)
-#     Receives EvaluationResult. Writes the final Indonesian report.
-#
-# ─────────────────────────────────────────────────────────────────────────────
+# =============================================================================
+# chain.py — Multi-Agent Pipeline Orchestrator (Hardcoded)
+# =============================================================================
+# Phase 1: Python fetch raw data from MySQL (deterministic)
+# Phase 2: DataEvaluatorAgent → validate, clean, flag issues
+# Phase 3: DataAnalystAgent → reasoning chain → AnalysisResult
+# Phase 4: ReportEvaluatorAgent → validate → accept OR feedback to Phase 3
+#           Max 2 feedback loops, then force accept
+# =============================================================================
 
 import json
 import re
@@ -33,259 +24,227 @@ from data_layer import (
     get_sitala_data, log_anomaly,
     safe_float,
 )
-from agents import DataEvaluatorAgent, AnalyticalAgent
+from agents import DataEvaluatorAgent, DataAnalystAgent, ReportEvaluatorAgent
 
 logger = logging.getLogger(__name__)
 
+MAX_FEEDBACK_LOOPS = 2
 
-# ─────────────────────────────────────────────────────────────────────────────
+
+# =============================================================================
 # INPUT PARSER
-# ─────────────────────────────────────────────────────────────────────────────
+# =============================================================================
 
-def parse_target(text: str) -> dict:
-    """Parse user message to determine analysis scope."""
-    text_lower = text.lower().strip()
-
-    station_match = re.search(r'klhk\s*(\d+)', text_lower)
-    if station_match:
-        return {"type": "station", "station_id": f"KLHK{station_match.group(1)}"}
-
-    loc_match = re.search(
-        r'(?:di|area|wilayah|sekitar|lokasi|daerah)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+)?)',
-        text_lower
-    )
-    if loc_match:
-        return {"type": "location", "location": loc_match.group(1).strip().title()}
-
-    return {"type": "all"}
+def parse_target(analysis_type: str, target_value: str = "") -> dict:
+    """Parse dashboard input into target dict."""
+    if analysis_type == "station" and target_value:
+        # Normalize station ID
+        match = re.search(r'KLHK\s*(\d+)', target_value, re.IGNORECASE)
+        sid = f"KLHK{match.group(1)}" if match else target_value.upper()
+        return {"type": "station", "station_id": sid}
+    elif analysis_type == "region" and target_value:
+        return {"type": "location", "location": target_value.strip().title()}
+    else:
+        return {"type": "all"}
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# PHASE 1 — Deterministic data fetch
-# ─────────────────────────────────────────────────────────────────────────────
+# =============================================================================
+# PHASE 1 — Deterministic data fetch from MySQL
+# =============================================================================
 
 def fetch_raw_data(target: dict) -> dict:
-    """
-    Fetch all data needed for evaluation.
-    Returns a raw_data_bundle dict passed to DataEvaluatorAgent.
-    """
-    logger.info(f"[Phase 1] Fetching raw data — target: {target}")
+    print(f"\n📡 [Phase 1] Fetching raw data — target: {target}")
 
-    # ── Fetch stations ────────────────────────────────────────────────────────
+    # Fetch stations
     if target["type"] == "station":
         stations = get_onlimo_data(station_id=target["station_id"], das=TARGET_DAS)
     elif target["type"] == "location":
-        all_stations = get_onlimo_data(das=TARGET_DAS)
+        all_st = get_onlimo_data(das=TARGET_DAS)
         loc = target["location"].lower()
         stations = [
-            s for s in all_stations
+            s for s in all_st
             if loc in (s.get("kecamatan") or "").lower()
             or loc in (s.get("kabkot") or "").lower()
             or loc in (s.get("station_name") or "").lower()
-        ] or all_stations  # fallback to all if no match
+        ] or all_st
     else:
         stations = get_onlimo_data(das=TARGET_DAS)
 
-    valid_stations = [s for s in stations if "error" not in s and "info" not in s]
-    logger.info(f"[Phase 1] Fetched {len(valid_stations)} stations")
+    valid = [s for s in stations if "error" not in s and "info" not in s]
+    print(f"  Stations fetched: {len(valid)}")
 
-    # Quick pre-filter: only fetch rain/sparing for anomalous-looking stations
-    # to avoid N×M queries when scanning all 500+ stations nationally
+    # Pre-filter candidates
     candidates = [
-        s for s in valid_stations
+        s for s in valid
         if safe_float(s.get("indeks_mutu")) >= ANOMALY_INDEX_THRESHOLD
         or "CEMAR" in (s.get("status") or "").upper()
-    ]
-    if not candidates:
-        # If nothing is above threshold, still include all (evaluator will confirm)
-        candidates = valid_stations[:10]
+    ] or valid[:10]
 
-    logger.info(f"[Phase 1] {len(candidates)} candidate stations for detail fetch")
+    print(f"  Candidates for analysis: {len(candidates)}")
 
-    # ── Fetch rainfall for each candidate ────────────────────────────────────
-    rainfall_by_station = {}
+    # Fetch rainfall per candidate
+    rainfall = {}
     for s in candidates:
         sid = s.get("station_id", "")
-        rain = get_rainfall_data(
+        rainfall[sid] = get_rainfall_data(
             location=s.get("kecamatan", ""),
             lat=safe_float(s.get("latitude")),
             lon=safe_float(s.get("longitude")),
         )
-        rainfall_by_station[sid] = rain
 
-    # ── Fetch sparing for each candidate ─────────────────────────────────────
-    sparing_by_station = {}
-    seen_districts = set()
-
+    # Fetch sparing per district
+    sparing = {}
+    seen = set()
     for s in candidates:
         sid = s.get("station_id", "")
         district = s.get("kecamatan") or s.get("kabkot") or ""
-
-        if district in seen_districts:
-            # Re-use already-fetched data for same district
-            for other_sid, data in sparing_by_station.items():
-                if data.get("_district") == district:
-                    sparing_by_station[sid] = data
+        if district in seen:
+            for k, v in sparing.items():
+                if v.get("_district") == district:
+                    sparing[sid] = v
                     break
             continue
-
-        seen_districts.add(district)
+        seen.add(district)
         loggers = get_sparing_logger_data(das=TARGET_DAS, district=district)
-        valid_loggers = [l for l in loggers if "error" not in l and "info" not in l]
+        valid_l = [l for l in loggers if "error" not in l and "info" not in l]
+        mon = {}
+        for lgr in valid_l:
+            lid = lgr.get("id_logger") or lgr.get("company_id")
+            if lid:
+                mon[lid] = [m for m in get_sparing_monitoring_data(company_id=lid, days=3) if "error" not in m and "info" not in m]
+        sparing[sid] = {"_district": district, "loggers": valid_l, "monitoring": mon}
 
-        monitoring_by_logger = {}
-        for lgr in valid_loggers:
-            id_logger = lgr.get("id_logger") or lgr.get("company_id")
-            if id_logger:
-                mon = get_sparing_monitoring_data(company_id=id_logger, days=3)
-                monitoring_by_logger[id_logger] = [
-                    m for m in mon if "error" not in m and "info" not in m
-                ]
+    # Fetch SITALA
+    sitala = [s for s in get_sitala_data(district=TARGET_REGION) if "error" not in s and "info" not in s]
 
-        sparing_by_station[sid] = {
-            "_district": district,
-            "loggers": valid_loggers,
-            "monitoring": monitoring_by_logger,
-        }
-
-    # ── Fetch SITALA for the region ───────────────────────────────────────────
-    sitala = get_sitala_data(district=TARGET_REGION)
-    valid_sitala = [s for s in sitala if "error" not in s and "info" not in s]
-
-    logger.info("[Phase 1] Raw data fetch complete")
-
+    print(f"  ✅ Phase 1 complete\n")
     return {
-        "target":              target,
-        "fetch_timestamp":     datetime.now().isoformat(),
-        "all_stations":        valid_stations,
-        "candidate_stations":  candidates,
-        "rainfall":            rainfall_by_station,
-        "sparing":             sparing_by_station,
-        "sitala":              valid_sitala,
-        "region":              TARGET_REGION,
-        "das":                 TARGET_DAS,
+        "target": target,
+        "fetch_timestamp": datetime.now().isoformat(),
+        "all_stations": valid,
+        "candidate_stations": candidates,
+        "rainfall": rainfall,
+        "sparing": sparing,
+        "sitala": sitala,
+        "region": TARGET_REGION,
+        "das": TARGET_DAS,
     }
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# OUTPUT FORMATTER
-# ─────────────────────────────────────────────────────────────────────────────
-
-def format_output(evaluation: dict, report: str) -> str:
-    """Combine evaluation trace with analytical report for Telegram."""
-    lines = []
-    lines.append("🔗 *WQSA ANALYSIS COMPLETE*")
-    lines.append(f"⏱️ {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-    lines.append("━" * 30)
-
-    # Evaluation summary header
-    anomalous = evaluation.get("anomalous_stations", [])
-    normal_count = evaluation.get("normal_station_count", 0)
-    lines.append(f"\n📡 *Evaluation Summary*")
-    lines.append(f"  Anomali terdeteksi: {len(anomalous)} stasiun ⚠️")
-    lines.append(f"  Kondisi normal: {normal_count} stasiun ✅")
-
-    if anomalous:
-        lines.append(f"\n  Top suspects:")
-        for s in anomalous:
-            top = s.get("top_suspect") or "tidak teridentifikasi"
-            urgency = s.get("urgency", "")
-            emoji = {"TINDAK": "🔴", "WASPADA": "🟡", "PANTAU": "🟢"}.get(urgency, "⚪")
-            confidence = ""
-            causal = s.get("causal_evidence", [])
-            if causal:
-                confidence = f" [{causal[0].get('causal_confidence', '')}]"
-            lines.append(f"  {emoji} {s.get('station_id')} → {top}{confidence}")
-
-    lines.append(f"\n{'━' * 30}")
-    lines.append("\n" + report)
-    return "\n".join(lines)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
+# =============================================================================
 # DB LOGGER
-# ─────────────────────────────────────────────────────────────────────────────
+# =============================================================================
 
-def _log_evaluation_to_db(evaluation: dict, report: str,
-                           user_id: Optional[int], session_id: Optional[str]):
-    """Persist each anomalous station from evaluation to anomaly_log."""
-    for s in evaluation.get("anomalous_stations", []):
+def _log_results(analysis: dict, report: dict, session_id: str):
+    for s in analysis.get("anomalous_stations", []):
         causal = s.get("causal_evidence", [])
         top = causal[0] if causal else {}
         try:
             log_anomaly({
-                "station_id":        s.get("station_id"),
-                "station_name":      s.get("station_name"),
-                "indeks_mutu":       s.get("indeks_mutu"),
-                "status_mutu":       s.get("status"),
-                "is_anomaly":        True,
-                "reasons":           s.get("anomaly_reasons", []),
-                "critical_parameter": (s.get("causal_evidence") or [{}])[0].get("violated_params", [""])[0],
+                "station_id":       s.get("station_id"),
+                "indeks_mutu":      s.get("indeks_mutu"),
+                "status_mutu":      s.get("status"),
+                "is_anomaly":       True,
+                "reasons":          s.get("anomaly_reasons", []),
+                "critical_parameter": (top.get("violated_params") or [""])[0] if top else "",
                 "pollution_profile": s.get("pollution_profile"),
-                "cod_bod_ratio":     s.get("cod_bod_ratio"),
-                "rainfall_mm_24h":   s.get("rainfall_mm"),
-                "is_runoff":         s.get("is_limpasan", False),
-                "urgency_level":     s.get("urgency"),
-                "ika_gap":           evaluation.get("ika_gap"),
-                "recommendation":    report[:2000],
-                "telegram_user_id":  user_id,
-                "session_id":        session_id,
+                "cod_bod_ratio":    s.get("cod_bod_ratio"),
+                "rainfall_mm_24h":  s.get("rainfall_mm"),
+                "is_runoff":        s.get("is_limpasan", False),
+                "urgency_level":    s.get("urgency"),
+                "ika_gap":          analysis.get("ika_gap"),
+                "recommendation":   json.dumps(report.get("analysis_highlight", {}).get("priority_actions", []), ensure_ascii=False)[:2000],
+                "session_id":       session_id,
             })
         except Exception as e:
-            logger.error(f"Failed to log {s.get('station_id')}: {e}")
+            logger.error(f"Log failed {s.get('station_id')}: {e}")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# =============================================================================
 # MAIN CHAIN RUNNER
-# ─────────────────────────────────────────────────────────────────────────────
+# =============================================================================
 
-def run_chain(user_text: str, user_id: Optional[int] = None,
-              session_id: Optional[str] = None) -> str:
+def run_chain(analysis_type: str = "full_scan", target_value: str = "",
+              session_id: Optional[str] = None) -> dict:
     """
-    Run the full multi-agent chain:
-      Phase 1 — fetch raw data (Python)
-      Phase 2 — DataEvaluatorAgent evaluates + cross-correlates
-      Phase 3 — AnalyticalAgent writes the report
+    Run the full 4-phase multi-agent chain.
+    Returns structured dict for dashboard consumption.
     """
+    ts = datetime.now()
+    session_id = session_id or f"dash-{int(ts.timestamp())}"
+
     print(f"\n{'━'*50}")
-    print(f"🔗 WQSA CHAIN — {user_text[:50]}")
+    print(f"🔗 WQSA CHAIN — {analysis_type}: {target_value or 'all'}")
     print(f"{'━'*50}")
 
-    # ── Phase 1: Fetch ────────────────────────────────────────────────────────
-    target = parse_target(user_text)
-    print(f"\n📡 [Phase 1] Fetching raw data — target: {target}")
+    # ── Phase 1: Fetch ─────────────────────────────────────────────────────
+    target = parse_target(analysis_type, target_value)
     raw_bundle = fetch_raw_data(target)
 
     if not raw_bundle["candidate_stations"]:
-        print("  ⚠️  No candidate stations found")
-        return "ℹ️ Tidak ada data stasiun ditemukan di database. Pastikan ETL sudah dijalankan."
+        return {
+            "status": "no_data",
+            "message": "Tidak ada data stasiun ditemukan. Pastikan ETL sudah dijalankan.",
+            "analysis_highlight": None,
+            "detail_reasoning": None,
+        }
 
-    print(f"  ✅ {len(raw_bundle['all_stations'])} total stations, "
-          f"{len(raw_bundle['candidate_stations'])} candidates for analysis")
-
-    # ── Phase 2: Evaluator agent ──────────────────────────────────────────────
-    print(f"\n🤖 [Phase 2] Handing off to DataEvaluatorAgent")
-    logger.info("[Chain] Handing off to DataEvaluatorAgent")
+    # ── Phase 2: DataEvaluator ─────────────────────────────────────────────
+    print(f"🤖 [Phase 2] DataEvaluator")
     evaluator = DataEvaluatorAgent()
-    evaluation = evaluator.run(raw_bundle)
+    cleaned = evaluator.run(raw_bundle)
+    data_quality = cleaned.get("data_quality", {})
 
-    anomalous_count = len(evaluation.get("anomalous_stations", []))
-    print(f"\n  📊 Evaluator result: {anomalous_count} anomalous station(s) found")
+    # ── Phase 3: DataAnalyst ───────────────────────────────────────────────
+    print(f"\n🤖 [Phase 3] DataAnalyst")
+    analyst = DataAnalystAgent()
+    analysis = analyst.run(cleaned)
 
-    # ── Phase 3: Analytical agent ─────────────────────────────────────────────
-    print(f"\n🧠 [Phase 3] Handing off to AnalyticalAgent")
-    logger.info("[Chain] Handing off to AnalyticalAgent")
-    analytical = AnalyticalAgent()
-    report = analytical.run(evaluation)
+    # ── Phase 4: ReportEvaluator (with feedback loop) ──────────────────────
+    print(f"\n🤖 [Phase 4] ReportEvaluator")
+    reporter = ReportEvaluatorAgent()
+    report = reporter.run(analysis, data_quality)
 
-    # ── Persist + format ──────────────────────────────────────────────────────
-    print(f"\n💾 Logging results to DB...")
-    try:
-        _log_evaluation_to_db(evaluation, report, user_id, session_id)
-        print(f"  ✅ Logged {anomalous_count} anomaly record(s)")
-    except Exception as e:
-        print(f"  ⚠️  DB log failed: {e}")
-        logger.error(f"[Chain] DB log failed: {e}")
+    loops = 0
+    while report.get("action") == "feedback" and loops < MAX_FEEDBACK_LOOPS:
+        loops += 1
+        feedback_text = json.dumps({
+            "issues": report.get("issues", []),
+            "questions": report.get("questions", []),
+        }, ensure_ascii=False)
+        print(f"\n🔄 Feedback loop {loops}/{MAX_FEEDBACK_LOOPS}")
 
-    print(f"\n✅ Chain complete — sending reply to Telegram\n{'━'*50}\n")
-    return format_output(evaluation, report)
+        # DataAnalyst revises
+        analysis = analyst.run(cleaned, feedback=feedback_text)
+        # ReportEvaluator re-validates
+        report = reporter.run(analysis, data_quality)
+
+    if report.get("action") == "feedback":
+        print(f"  ⚠️ Max feedback loops reached — forcing accept")
+        report["action"] = "accept"
+        report["unresolved_issues"] = report.get("issues", [])
+
+    # ── Log to DB ──────────────────────────────────────────────────────────
+    print(f"\n💾 Logging results...")
+    _log_results(analysis, report, session_id)
+
+    # ── Build final output ─────────────────────────────────────────────────
+    anomalous = analysis.get("anomalous_stations", [])
+    normal_ct = analysis.get("normal_station_count", 0)
+    print(f"\n✅ Chain complete — {len(anomalous)} anomalous, {normal_ct} normal")
+    print(f"{'━'*50}\n")
+
+    return {
+        "status":             "done",
+        "session_id":         session_id,
+        "timestamp":          ts.isoformat(),
+        "feedback_loops":     loops,
+        "data_quality":       data_quality,
+        "analysis_raw":       analysis,
+        "analysis_highlight": report.get("analysis_highlight"),
+        "detail_reasoning":   report.get("detail_reasoning"),
+        "kpi_update":         report.get("kpi_update"),
+        "ika_summary":        report.get("ika_summary"),
+        "telegram_message":   report.get("telegram_message"),
+        "unresolved_issues":  report.get("unresolved_issues", []),
+    }

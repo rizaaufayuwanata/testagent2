@@ -53,7 +53,9 @@ RATE_LIMIT_SECONDS   = int(os.getenv("RATE_LIMIT_SECONDS", "5"))
 
 # ── LLM Models ───────────────────────────────────────────────────────────────
 AGENT_MODEL          = os.getenv("AGENT_MODEL", "openai/gpt-5-nano")
-# REC_MODEL uses OpenRouter too in local mode (no Anthropic API needed)
+EVALUATOR_MODEL      = os.getenv("EVALUATOR_MODEL", AGENT_MODEL)
+ANALYST_MODEL        = os.getenv("ANALYST_MODEL", AGENT_MODEL)
+REPORTER_MODEL       = os.getenv("REPORTER_MODEL", AGENT_MODEL)
 REC_MODEL            = os.getenv("REC_MODEL", "openai/gpt-5-nano")
 
 # ── DAS & Domain Config ──────────────────────────────────────────────────────

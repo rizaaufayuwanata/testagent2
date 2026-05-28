@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WQSA — Water Quality Dashboard</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<style>
+  :root { --wqsa-blue:#0d6efd; --wqsa-teal:#0dcaf0; --wqsa-green:#198754; --wqsa-yellow:#ffc107; --wqsa-red:#dc3545; --wqsa-gray:#6c757d; }
+  body { background:#f0f4f8; font-size:.88rem; }
+  #navbar { background:linear-gradient(90deg,#0a3d62,#1a6fa8); }
+  #navbar .navbar-brand { font-weight:700; font-size:1.1rem; }
+  .kpi-card { border:none; border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,.08); transition:transform .15s; }
+  .kpi-card:hover { transform:translateY(-2px); }
+  .kpi-icon { font-size:2rem; }
+  #map { height:380px; border-radius:10px; }
+  .section-title { font-weight:700; font-size:.95rem; text-transform:uppercase; letter-spacing:.5px; color:#0a3d62; }
+  .status-dot { width:10px; height:10px; border-radius:50%; display:inline-block; }
+  .dot-red { background:var(--wqsa-red); } .dot-yellow { background:var(--wqsa-yellow); }
+  .dot-green { background:var(--wqsa-green); } .dot-gray { background:var(--wqsa-gray); }
+  .urgency-TINDAK { color:var(--wqsa-red); font-weight:700; }
+  .urgency-WASPADA { color:var(--wqsa-yellow); font-weight:700; }
+  .urgency-PANTAU { color:var(--wqsa-green); font-weight:600; }
+  .chart-wrap { position:relative; height:240px; }
+  .highlight-card { border-left:4px solid var(--wqsa-blue); background:#fff; }
+  .highlight-card.urgency-bg-TINDAK { border-left-color:var(--wqsa-red); }
+  .highlight-card.urgency-bg-WASPADA { border-left-color:var(--wqsa-yellow); }
+  .highlight-card.urgency-bg-PANTAU { border-left-color:var(--wqsa-green); }
+  #detail-modal .modal-dialog { max-width:900px; }
+  #detail-body { max-height:70vh; overflow-y:auto; font-size:.85rem; }
+  .step-badge { display:inline-block; width:24px; height:24px; border-radius:50%; background:#0a3d62; color:#fff; text-align:center; line-height:24px; font-size:.75rem; font-weight:700; margin-right:.4rem; }
+  .analysis-controls .btn { min-width:140px; }
+  footer { font-size:.78rem; color:#6c757d; }
+</style>
+</head>
+<body>
+
+<nav class="navbar navbar-dark py-2 mb-3" id="navbar">
+  <div class="container-fluid">
+    <span class="navbar-brand"><i class="bi bi-water me-2"></i>WQSA — Water Quality Dashboard</span>
+    <span class="text-white-50 small" id="last-refresh">Memuat…</span>
+  </div>
+</nav>
+
+<div class="container-fluid px-3">
+
+  <!-- KPI Cards -->
+  <div class="row g-3 mb-3" id="kpi-row">
+    <div class="col-6 col-md-3 col-xl-2"><div class="card kpi-card h-100 text-center py-3 bg-primary text-white"><div class="kpi-icon"><i class="bi bi-broadcast"></i></div><div class="fw-bold fs-3" id="kpi-stations">–</div><div class="small">Stasiun Aktif</div></div></div>
+    <div class="col-6 col-md-3 col-xl-2"><div class="card kpi-card h-100 text-center py-3 bg-danger text-white"><div class="kpi-icon"><i class="bi bi-exclamation-triangle"></i></div><div class="fw-bold fs-3" id="kpi-critical">–</div><div class="small">Cemar Berat</div></div></div>
+    <div class="col-6 col-md-3 col-xl-2"><div class="card kpi-card h-100 text-center py-3 bg-warning"><div class="kpi-icon"><i class="bi bi-exclamation-circle"></i></div><div class="fw-bold fs-3" id="kpi-warning">–</div><div class="small">Cemar Sedang</div></div></div>
+    <div class="col-6 col-md-3 col-xl-2"><div class="card kpi-card h-100 text-center py-3 bg-success text-white"><div class="kpi-icon"><i class="bi bi-check-circle"></i></div><div class="fw-bold fs-3" id="kpi-good">–</div><div class="small">Kondisi Baik</div></div></div>
+    <div class="col-6 col-md-3 col-xl-2"><div class="card kpi-card h-100 text-center py-3" style="background:#e8f4fd"><div class="kpi-icon text-info"><i class="bi bi-cloud-rain"></i></div><div class="fw-bold fs-3" id="kpi-rain">–</div><div class="small text-muted">Curah Hujan Max</div></div></div>
+    <div class="col-6 col-md-3 col-xl-2"><div class="card kpi-card h-100 text-center py-3" style="background:#e8f4fd"><div class="kpi-icon text-danger"><i class="bi bi-factory"></i></div><div class="fw-bold fs-3" id="kpi-langgar">–</div><div class="small text-muted">Pelanggaran SPARING</div></div></div>
+  </div>
+
+  <!-- ═══ ANALYSIS CONTROLS + HIGHLIGHT ═══ -->
+  <div class="row g-3 mb-3">
+    <div class="col-12">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <span class="section-title"><i class="bi bi-robot me-1"></i>Analisis Agent</span>
+            <span class="small text-muted" id="analysis-status"></span>
+          </div>
+
+          <!-- Defined input buttons -->
+          <div class="analysis-controls d-flex flex-wrap gap-2 mb-3">
+            <button class="btn btn-primary" id="btn-full-scan" onclick="startAnalysis('full_scan')">
+              <i class="bi bi-broadcast me-1"></i>Analisis Semua Stasiun
+            </button>
+            <div class="input-group" style="max-width:320px">
+              <select class="form-select form-select-sm" id="sel-station"><option value="">Pilih stasiun…</option></select>
+              <button class="btn btn-outline-primary btn-sm" onclick="startAnalysis('station', document.getElementById('sel-station').value)">
+                <i class="bi bi-search me-1"></i>Analisis Stasiun
+              </button>
+            </div>
+            <div class="input-group" style="max-width:280px">
+              <input type="text" class="form-control form-control-sm" id="inp-region" placeholder="Kecamatan / Kabupaten">
+              <button class="btn btn-outline-primary btn-sm" onclick="startAnalysis('region', document.getElementById('inp-region').value)">
+                <i class="bi bi-geo-alt me-1"></i>Analisis Wilayah
+              </button>
+            </div>
+          </div>
+
+          <!-- Highlight section (populated after analysis) -->
+          <div id="highlight-section" class="d-none">
+            <div class="row g-3">
+              <div class="col-md-4">
+                <div class="card highlight-card shadow-sm p-3 h-100" id="highlight-urgency-card">
+                  <div class="small text-muted text-uppercase">Urgensi Keseluruhan</div>
+                  <div class="fs-2 fw-bold" id="hl-urgency">–</div>
+                  <div class="small" id="hl-counts"></div>
+                  <div class="mt-2" id="hl-ika"></div>
+                </div>
+              </div>
+              <div class="col-md-4">
+                <div class="card shadow-sm p-3 h-100">
+                  <div class="small text-muted text-uppercase mb-2">Stasiun Kritis</div>
+                  <div id="hl-stations">–</div>
+                </div>
+              </div>
+              <div class="col-md-4">
+                <div class="card shadow-sm p-3 h-100">
+                  <div class="small text-muted text-uppercase mb-2">Rekomendasi Prioritas</div>
+                  <div id="hl-actions">–</div>
+                </div>
+              </div>
+            </div>
+            <div class="mt-2 d-flex gap-2">
+              <button class="btn btn-outline-secondary btn-sm" onclick="showDetail()">
+                <i class="bi bi-file-text me-1"></i>Detail Analisis
+              </button>
+              <button class="btn btn-outline-info btn-sm" id="btn-telegram" onclick="sendTelegram()">
+                <i class="bi bi-send me-1"></i>Kirim ke Telegram
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Map + Station Table -->
+  <div class="row g-3 mb-3">
+    <div class="col-lg-6">
+      <div class="card border-0 shadow-sm h-100"><div class="card-body p-2">
+        <span class="section-title px-1"><i class="bi bi-map me-1"></i>Peta Stasiun</span>
+        <div id="map" class="mt-2"></div>
+      </div></div>
+    </div>
+    <div class="col-lg-6">
+      <div class="card border-0 shadow-sm h-100"><div class="card-body p-2">
+        <span class="section-title px-1"><i class="bi bi-table me-1"></i>Data Stasiun Onlimo</span>
+        <div style="max-height:380px;overflow-y:auto" class="mt-2">
+          <table class="table table-sm table-hover mb-0"><thead class="table-dark sticky-top"><tr><th>Stasiun</th><th>Status</th><th>Indeks</th><th>COD</th><th>BOD</th><th>DO</th><th>pH</th><th>TSS</th></tr></thead><tbody id="onlimo-body"><tr><td colspan="8" class="text-center text-muted">Memuat…</td></tr></tbody></table>
+        </div>
+      </div></div>
+    </div>
+  </div>
+
+  <!-- BMKG + SPARING + SITALA charts -->
+  <div class="row g-3 mb-3">
+    <div class="col-lg-5"><div class="card border-0 shadow-sm"><div class="card-body">
+      <span class="section-title"><i class="bi bi-cloud-rain me-1"></i>Curah Hujan BMKG (24h)</span>
+      <div class="chart-wrap mt-2"><canvas id="bmkg-chart"></canvas></div>
+    </div></div></div>
+    <div class="col-lg-4"><div class="card border-0 shadow-sm"><div class="card-body">
+      <span class="section-title"><i class="bi bi-pie-chart me-1"></i>Ketaatan SPARING</span>
+      <div class="chart-wrap mt-2" style="height:200px"><canvas id="sparing-pie"></canvas></div>
+      <div class="text-center small text-muted" id="sparing-label"></div>
+    </div></div></div>
+    <div class="col-lg-3"><div class="card border-0 shadow-sm"><div class="card-body">
+      <span class="section-title"><i class="bi bi-bar-chart me-1"></i>IKA vs Target</span>
+      <div class="chart-wrap mt-2" style="height:200px"><canvas id="sitala-chart"></canvas></div>
+    </div></div></div>
+  </div>
+
+  <!-- Violations + SITALA table -->
+  <div class="row g-3 mb-3">
+    <div class="col-lg-6"><div class="card border-0 shadow-sm"><div class="card-body p-2">
+      <span class="section-title px-1"><i class="bi bi-exclamation-octagon me-1"></i>Pelanggaran Baku Mutu</span>
+      <div style="max-height:200px;overflow-y:auto;margin-top:.4rem">
+        <table class="table table-sm table-hover mb-0"><thead class="table-danger sticky-top"><tr><th>Perusahaan</th><th>Parameter</th><th>Nilai</th><th>BM</th><th>%BM</th><th>Tanggal</th></tr></thead><tbody id="violation-body"><tr><td colspan="6" class="text-center text-muted">Memuat…</td></tr></tbody></table>
+      </div>
+    </div></div></div>
+    <div class="col-lg-6"><div class="card border-0 shadow-sm"><div class="card-body p-2">
+      <span class="section-title px-1"><i class="bi bi-award me-1"></i>IKA per Kabupaten</span>
+      <div style="max-height:200px;overflow-y:auto;margin-top:.4rem">
+        <table class="table table-sm table-hover mb-0"><thead class="table-primary sticky-top"><tr><th>Kab/Kota</th><th>IKA</th><th>Target</th><th>Gap</th><th>Urgensi</th></tr></thead><tbody id="sitala-body"><tr><td colspan="5" class="text-center text-muted">Memuat…</td></tr></tbody></table>
+      </div>
+    </div></div></div>
+  </div>
+
+  <!-- Anomaly Log -->
+  <div class="row g-3 mb-4">
+    <div class="col-12"><div class="card border-0 shadow-sm"><div class="card-body p-2">
+      <span class="section-title px-1"><i class="bi bi-journal-text me-1"></i>Log Anomali Terbaru</span>
+      <div style="max-height:200px;overflow-y:auto;margin-top:.4rem">
+        <table class="table table-sm table-hover mb-0"><thead class="table-secondary sticky-top"><tr><th>Waktu</th><th>Stasiun</th><th>Indeks</th><th>Profil</th><th>Urgensi</th><th>Rekomendasi</th></tr></thead><tbody id="anomaly-body"><tr><td colspan="6" class="text-center text-muted">Memuat…</td></tr></tbody></table>
+      </div>
+    </div></div></div>
+  </div>
+
+</div>
+
+<!-- Detail Reasoning Modal -->
+<div class="modal fade" id="detail-modal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content">
+  <div class="modal-header"><h6 class="modal-title"><i class="bi bi-file-text me-1"></i>Detail Reasoning</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body" id="detail-body"><p class="text-muted">Memuat…</p></div>
+</div></div></div>
+
+<footer class="text-center py-3">WQSA Dashboard · DAS Citarum · Data: Onlimo KLHK, SPARING, SITALA, BMKG</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+
+<script>
+let bmkgChart=null, sparingPie=null, sitalaChart=null, _currentJobId=null, _pollTimer=null;
+const map = L.map('map').setView([-6.9,107.6],9);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OSM'}).addTo(map);
+const markers={};
+
+function fmt(v,d=1){return v==null||isNaN(v)?'–':Number(v).toFixed(d)}
+function uc(u){return u==='TINDAK'?'urgency-TINDAK':u==='WASPADA'?'urgency-WASPADA':'urgency-PANTAU'}
+function sd(s){return s?(s+'').replace('T',' ').slice(0,16):'–'}
+function mc(w){if(!w)return'#6c757d';const u=w.toUpperCase();return u==='MERAH'?'#dc3545':u==='KUNING'?'#ffc107':u==='HIJAU'?'#198754':'#6c757d'}
+function mkIcon(c){return L.divIcon({className:'',html:`<div style="width:12px;height:12px;border-radius:50%;background:${c};border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4)"></div>`,iconSize:[12,12],iconAnchor:[6,6]})}
+
+// ── Data loaders ──────────────────────────────────────────────────────────
+async function loadSummary(){
+  try{const r=await fetch('/api/summary');const d=await r.json();
+  document.getElementById('kpi-stations').textContent=d.total_stations??'–';
+  document.getElementById('kpi-critical').textContent=d.critical??'–';
+  document.getElementById('kpi-warning').textContent=d.warning??'–';
+  document.getElementById('kpi-good').textContent=d.good??'–';
+  document.getElementById('kpi-rain').textContent=d.max_rainfall_mm??'–';
+  document.getElementById('kpi-langgar').textContent=d.sparing_langgar??'–';
+  document.getElementById('last-refresh').textContent='Update: '+new Date().toLocaleTimeString('id-ID');
+  }catch(e){console.error('summary',e)}
+}
+
+async function loadOnlimo(){
+  try{const r=await fetch('/api/onlimo');const rows=await r.json();if(rows.error)return;
+  document.getElementById('onlimo-body').innerHTML=rows.map(s=>{
+    const c=mc(s.status_warna);
+    return`<tr style="cursor:pointer" onclick="map.setView([${s.latitude||0},${s.longitude||0}],13)">
+      <td><b>${s.station_id}</b><br><small class="text-muted">${s.station_name||''}</small></td>
+      <td><span style="color:${c};font-weight:600">${s.status||'–'}</span></td>
+      <td>${fmt(s.indeks_mutu,2)}</td><td>${fmt(s.cod)}</td><td>${fmt(s.bod)}</td>
+      <td>${fmt(s.do)}</td><td>${fmt(s.ph)}</td><td>${fmt(s.tss)}</td></tr>`
+  }).join('')||'<tr><td colspan="8" class="text-center text-muted">Tidak ada data</td></tr>';
+  Object.values(markers).forEach(m=>map.removeLayer(m));
+  rows.forEach(s=>{if(!s.latitude||!s.longitude)return;
+    const m=L.marker([s.latitude,s.longitude],{icon:mkIcon(mc(s.status_warna))}).addTo(map)
+      .bindPopup(`<b>${s.station_id}</b> — ${s.station_name}<br>Status: <b>${s.status}</b><br>Indeks: ${fmt(s.indeks_mutu,2)}`);
+    markers[s.station_id]=m;
+  });
+  // Populate station dropdown
+  const sel=document.getElementById('sel-station');
+  const cur=sel.value;
+  sel.innerHTML='<option value="">Pilih stasiun…</option>'+rows.map(s=>`<option value="${s.station_id}">${s.station_id} — ${s.station_name||''}</option>`).join('');
+  if(cur)sel.value=cur;
+  }catch(e){console.error('onlimo',e)}
+}
+
+async function loadBmkg(){
+  try{const r=await fetch('/api/bmkg');const rows=await r.json();if(!rows.length)return;
+  const ctx=document.getElementById('bmkg-chart').getContext('2d');
+  if(bmkgChart)bmkgChart.destroy();
+  bmkgChart=new Chart(ctx,{type:'bar',data:{labels:rows.map(r=>r.location||'?'),datasets:[{label:'mm/24h',data:rows.map(r=>r.total_rainfall_mm),backgroundColor:rows.map(r=>r.is_high_rainfall?'rgba(220,53,69,.8)':'rgba(13,202,240,.7)'),borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true},x:{ticks:{maxRotation:45,font:{size:9}}}}}});
+  }catch(e){console.error('bmkg',e)}
+}
+
+async function loadSparing(){
+  try{const r=await fetch('/api/sparing');const d=await r.json();if(d.error)return;
+  const t=d.summary.taat,l=d.summary.langgar;
+  document.getElementById('sparing-label').textContent=`${t} Taat / ${l} Langgar`;
+  const ctx=document.getElementById('sparing-pie').getContext('2d');
+  if(sparingPie)sparingPie.destroy();
+  sparingPie=new Chart(ctx,{type:'doughnut',data:{labels:['TAAT','LANGGAR'],datasets:[{data:[t,l],backgroundColor:['#198754','#dc3545'],borderWidth:1}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:10}}}}}});
+  document.getElementById('violation-body').innerHTML=d.violations.map(v=>
+    `<tr><td title="${v.company_name}">${(v.company_name||'').slice(0,22)}</td><td>${v.parameter}</td><td>${fmt(v.value,2)}</td><td>${fmt(v.baku_mutu,2)}</td><td class="text-danger fw-bold">${fmt(v.pct_of_bm,0)}%</td><td>${sd(v.reported_at)}</td></tr>`
+  ).join('')||'<tr><td colspan="6" class="text-center text-success">Tidak ada pelanggaran</td></tr>';
+  }catch(e){console.error('sparing',e)}
+}
+
+async function loadSitala(){
+  try{const r=await fetch('/api/sitala');const rows=await r.json();if(!rows.length)return;
+  const sl=rows.slice(0,12);
+  const ctx=document.getElementById('sitala-chart').getContext('2d');
+  if(sitalaChart)sitalaChart.destroy();
+  sitalaChart=new Chart(ctx,{type:'bar',data:{labels:sl.map(r=>(r.kabkot||'').replace('Kab. ','').slice(0,10)),datasets:[{label:'IKA',data:sl.map(r=>r.ika),backgroundColor:'rgba(13,110,253,.7)',borderRadius:3},{label:'Target',data:sl.map(r=>r.target_ika),backgroundColor:'rgba(253,126,20,.6)',borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:9}}}},scales:{y:{beginAtZero:false}}}});
+  document.getElementById('sitala-body').innerHTML=rows.map(s=>
+    `<tr><td>${s.kabkot||'–'}</td><td>${fmt(s.ika,2)}</td><td>${fmt(s.target_ika,2)}</td><td class="${s.gap_ika<-7?'text-danger fw-bold':s.gap_ika<-3?'text-warning fw-bold':'text-success'}">${fmt(s.gap_ika,2)}</td><td class="${uc(s.urgency)}">${s.urgency||'–'}</td></tr>`
+  ).join('');
+  }catch(e){console.error('sitala',e)}
+}
+
+async function loadAnomalyLog(){
+  try{const r=await fetch('/api/anomaly_log');const rows=await r.json();
+  document.getElementById('anomaly-body').innerHTML=rows.map(a=>
+    `<tr><td>${sd(a.logged_at)}</td><td><b>${a.station_id||'–'}</b></td><td>${fmt(a.indeks_mutu,2)}</td><td>${a.pollution_profile||'–'}</td><td class="${uc(a.urgency_level)}">${a.urgency_level||'–'}</td><td class="text-muted" style="max-width:250px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${(a.recommendation||'–').slice(0,150)}</td></tr>`
+  ).join('')||'<tr><td colspan="6" class="text-center text-muted">Belum ada</td></tr>';
+  }catch(e){console.error('log',e)}
+}
+
+// ── Analysis ──────────────────────────────────────────────────────────────
+async function startAnalysis(type, target=''){
+  if(type==='station'&&!target){alert('Pilih stasiun terlebih dahulu');return}
+  if(type==='region'&&!target){alert('Isi nama wilayah terlebih dahulu');return}
+
+  const btns=document.querySelectorAll('.analysis-controls button');
+  btns.forEach(b=>{b.disabled=true});
+  document.getElementById('analysis-status').innerHTML='<span class="spinner-border spinner-border-sm me-1"></span>Analisis berjalan…';
+  document.getElementById('highlight-section').classList.add('d-none');
+
+  try{
+    const res=await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type,target})});
+    const{job_id}=await res.json();
+    _currentJobId=job_id;
+    if(_pollTimer)clearInterval(_pollTimer);
+    _pollTimer=setInterval(()=>pollAnalysis(job_id,btns),3000);
+  }catch(e){
+    document.getElementById('analysis-status').textContent='❌ '+e.message;
+    btns.forEach(b=>{b.disabled=false});
+  }
+}
+
+async function pollAnalysis(jobId, btns){
+  try{
+    const r=await fetch('/api/analyze/'+jobId);
+    const d=await r.json();
+
+    if(d.status==='done'){
+      clearInterval(_pollTimer);_pollTimer=null;
+      btns.forEach(b=>{b.disabled=false});
+      document.getElementById('analysis-status').textContent='✅ Selesai — '+sd(d.finished_at);
+      renderHighlight(d.result);
+      // Refresh all data panels
+      loadSummary();loadOnlimo();loadBmkg();loadSparing();loadSitala();loadAnomalyLog();
+    }else if(d.status==='error'){
+      clearInterval(_pollTimer);_pollTimer=null;
+      btns.forEach(b=>{b.disabled=false});
+      document.getElementById('analysis-status').textContent='❌ Error: '+(d.error||'unknown');
+    }else{
+      document.getElementById('analysis-status').innerHTML='<span class="spinner-border spinner-border-sm me-1"></span>'+d.status+'…';
+    }
+  }catch(e){console.error('poll',e)}
+}
+
+function renderHighlight(result){
+  if(!result||!result.analysis_highlight){document.getElementById('highlight-section').classList.add('d-none');return}
+  const hl=result.analysis_highlight;
+  document.getElementById('highlight-section').classList.remove('d-none');
+
+  // Urgency card
+  const ucard=document.getElementById('highlight-urgency-card');
+  ucard.className='card highlight-card shadow-sm p-3 h-100 urgency-bg-'+(hl.overall_urgency||'PANTAU');
+  document.getElementById('hl-urgency').textContent=(hl.overall_urgency||'–');
+  document.getElementById('hl-urgency').className='fs-2 fw-bold '+uc(hl.overall_urgency);
+  document.getElementById('hl-counts').textContent=`${hl.total_anomalous||0} anomali · ${hl.total_normal||0} normal`;
+
+  const ika=result.ika_summary;
+  document.getElementById('hl-ika').innerHTML=ika?`<small class="text-muted">IKA: ${fmt(ika.actual,1)} / ${fmt(ika.target,1)} (gap: ${fmt(ika.gap,1)})</small>`:'';
+
+  // Stations
+  const stations=hl.top_stations||[];
+  document.getElementById('hl-stations').innerHTML=stations.map(s=>
+    `<div class="mb-2"><b class="${uc(s.urgency)}">${s.station_id}</b> — ${s.station_name||''}<br><small class="text-muted">${s.key_finding||''}</small></div>`
+  ).join('')||'<span class="text-muted">Tidak ada anomali</span>';
+
+  // Actions
+  const actions=hl.priority_actions||[];
+  document.getElementById('hl-actions').innerHTML=actions.map(a=>
+    `<div class="mb-1"><span class="badge bg-dark me-1">${a.priority}</span>${a.action}<br><small class="text-muted">Target: ${a.target||'–'} · ${a.deadline||''}</small></div>`
+  ).join('')||'<span class="text-muted">Tidak ada rekomendasi</span>';
+}
+
+// ── Detail popup ──────────────────────────────────────────────────────────
+async function showDetail(){
+  if(!_currentJobId)return;
+  const modal=new bootstrap.Modal(document.getElementById('detail-modal'));
+  document.getElementById('detail-body').innerHTML='<p class="text-muted">Memuat…</p>';
+  modal.show();
+
+  try{
+    const r=await fetch('/api/analyze/'+_currentJobId+'/detail');
+    const d=await r.json();
+    renderDetail(d);
+  }catch(e){document.getElementById('detail-body').innerHTML='<p class="text-danger">'+e.message+'</p>'}
+}
+
+function renderDetail(d){
+  const body=document.getElementById('detail-body');
+  let html='';
+
+  // Data quality
+  const dq=d.data_quality||{};
+  html+=`<div class="mb-3"><h6>Data Quality</h6><div class="small">Score: <b>${dq.overall_score??'–'}</b>/100 · Issues: ${dq.issues_found??0}</div>`;
+  if(dq.outliers&&dq.outliers.length){
+    html+='<ul class="small mt-1">';dq.outliers.forEach(o=>{html+=`<li><b>${o.station||o.station_id}</b> ${o.field}: ${o.value} — ${o.issue||o.reason}</li>`});html+='</ul>';
+  }
+  html+='</div>';
+
+  // Feedback loops
+  if(d.feedback_loops>0)html+=`<div class="alert alert-info small">ReportEvaluator melakukan ${d.feedback_loops} feedback loop ke DataAnalyst.</div>`;
+  if(d.unresolved_issues&&d.unresolved_issues.length){
+    html+='<div class="alert alert-warning small"><b>Isu belum terselesaikan:</b><ul>';d.unresolved_issues.forEach(i=>{html+='<li>'+i+'</li>'});html+='</ul></div>';
+  }
+
+  // Per-station reasoning
+  const detail=d.detail_reasoning||{};
+  const perStation=detail.per_station||[];
+  perStation.forEach(st=>{
+    html+=`<div class="card mb-2"><div class="card-body p-2">`;
+    html+=`<h6 class="mb-2">${st.station_id} — ${st.station_name||''}</h6>`;
+    (st.steps||[]).forEach(step=>{
+      html+=`<div class="mb-1"><span class="step-badge">${step.step}</span><b>${step.name}</b><br><small class="text-muted ms-4">${step.result||'–'}</small></div>`;
+    });
+    if(st.causal_chain&&st.causal_chain.length){
+      html+='<div class="mt-2 small"><b>Causal Evidence:</b><ul>';
+      st.causal_chain.forEach(c=>{html+=`<li>${c.company_name||'?'}: confidence ${c.causal_confidence||'?'}, jarak ${c.distance_km??'?'}km, params: ${(c.violated_params||[]).join(', ')||'–'}</li>`});
+      html+='</ul></div>';
+    }
+    html+='</div></div>';
+  });
+
+  if(!perStation.length)html+='<p class="text-muted">Detail reasoning tidak tersedia.</p>';
+  body.innerHTML=html;
+}
+
+// ── Telegram send ─────────────────────────────────────────────────────────
+async function sendTelegram(){
+  const chatId=prompt('Masukkan Telegram Chat ID:');
+  if(!chatId)return;
+  try{
+    const r=await fetch('/api/analyze/'+_currentJobId+'/telegram',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:chatId})});
+    const d=await r.json();
+    alert(d.sent?'Terkirim ke Telegram!':'Gagal: '+(d.error||'unknown'));
+  }catch(e){alert('Error: '+e.message)}
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────
+(async()=>{await Promise.all([loadSummary(),loadOnlimo(),loadBmkg(),loadSparing(),loadSitala(),loadAnomalyLog()])})();
+setInterval(()=>{loadSummary();loadOnlimo();loadBmkg();loadSparing();loadSitala();loadAnomalyLog()},5*60*1000);
+</script>
+</body>
+</html>

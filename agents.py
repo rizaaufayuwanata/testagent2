@@ -1,28 +1,20 @@
-# ─────────────────────────────────────────────────────────────────────────────
-# agents.py — Multi-Agent Pipeline for WQSA
-# ─────────────────────────────────────────────────────────────────────────────
-#
-# Two agents, two jobs:
-#
-#   DataEvaluatorAgent   — receives pre-fetched raw data bundle, runs an
-#                          agentic loop with analysis tools, outputs a
-#                          structured EvaluationResult JSON.
-#
-#   AnalyticalAgent      — receives EvaluationResult, makes a single LLM
-#                          call, writes the final Indonesian report.
-#
-# Neither agent queries the database directly — data fetching stays in
-# chain.py (deterministic Python). Agents only reason about data.
-# ─────────────────────────────────────────────────────────────────────────────
+# =============================================================================
+# agents.py — Multi-Agent Pipeline for WQSA (3 agents)
+# =============================================================================
+# Agent 1: DataEvaluatorAgent  — validate, clean, flag data quality issues
+# Agent 2: DataAnalystAgent    — reasoning chain (detect → profile → rain → sparing → correlate → ika)
+# Agent 3: ReportEvaluatorAgent — validate analysis consistency, format for dashboard (or send feedback)
+# =============================================================================
 
 import json
 import logging
 from typing import Optional
+from datetime import datetime
 
 from openai import OpenAI
-
 from config import (
-    OPENROUTER_API_KEY, AGENT_MODEL,
+    OPENROUTER_API_KEY,
+    EVALUATOR_MODEL, ANALYST_MODEL, REPORTER_MODEL,
     TARGET_DAS, TARGET_REGION,
     ANOMALY_INDEX_THRESHOLD, RAINFALL_HIGH_MM,
     IKA_GAP_WARNING, IKA_GAP_CRITICAL,
@@ -36,373 +28,449 @@ from tools import (
 
 logger = logging.getLogger(__name__)
 
-# ── Lazy OpenRouter client ────────────────────────────────────────────────────
-_client: Optional[OpenAI] = None
+# ── Lazy OpenRouter clients per model ─────────────────────────────────────
+_clients = {}
 
-def _get_client() -> OpenAI:
-    global _client
-    if _client is None:
+def _get_client(model: str) -> OpenAI:
+    if model not in _clients:
         if not OPENROUTER_API_KEY:
-            raise RuntimeError("OPENROUTER_API_KEY is not set in wqsa.env")
-        _client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=OPENROUTER_API_KEY)
-    return _client
+            raise RuntimeError("OPENROUTER_API_KEY not set")
+        _clients[model] = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=OPENROUTER_API_KEY)
+    return _clients[model]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# EVALUATOR TOOLS — analysis only, no data fetch, no report writing
-# ─────────────────────────────────────────────────────────────────────────────
+def _run_loop(model, system_prompt, user_content, tools_list, tool_funcs, max_steps=30, label="Agent"):
+    """Generic agentic loop shared by DataEvaluator and DataAnalyst."""
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content},
+    ]
+    step = 0
+    for _ in range(max_steps):
+        response = _get_client(model).chat.completions.create(
+            model=model, messages=messages, tools=tools_list, tool_choice="auto",
+        )
+        msg = response.choices[0].message
+
+        if not msg.tool_calls:
+            raw = (msg.content or "").strip()
+            print(f"  ✅ [{label}] Done — {step} tool calls")
+            return raw
+
+        messages.append({
+            "role": "assistant", "content": msg.content,
+            "tool_calls": [
+                {"id": tc.id, "type": "function",
+                 "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
+                for tc in msg.tool_calls
+            ],
+        })
+
+        for tc in msg.tool_calls:
+            step += 1
+            name = tc.function.name
+            args = json.loads(tc.function.arguments)
+            summary = ", ".join(f"{k}={str(v)[:50]}" for k, v in args.items())
+            print(f"  [{step:02d}] → {name}({summary})")
+
+            if name in tool_funcs:
+                try:
+                    result = tool_funcs[name](args)
+                    preview = str(result)[:100].replace("\n", " ")
+                    print(f"       ↳ {preview}{'...' if len(str(result)) > 100 else ''}")
+                except Exception as e:
+                    result = json.dumps({"error": str(e)})
+                    print(f"       ↳ ERROR: {e}")
+            else:
+                result = json.dumps({"error": f"Unknown tool: {name}"})
+
+            messages.append({"role": "tool", "tool_call_id": tc.id, "content": str(result)})
+
+    print(f"  ⚠️ [{label}] Hit MAX_STEPS={max_steps}")
+    return json.dumps({"error": f"Exceeded {max_steps} steps", "partial": True})
+
+
+def _parse_json(raw: str, label: str) -> dict:
+    """Parse LLM JSON output, stripping markdown fences."""
+    try:
+        clean = raw.strip()
+        if clean.startswith("```"):
+            clean = clean.split("```", 2)[1]
+            if clean.startswith("json"):
+                clean = clean[4:]
+            clean = clean.rsplit("```", 1)[0].strip()
+        return json.loads(clean)
+    except json.JSONDecodeError as e:
+        logger.error(f"[{label}] JSON parse failed: {e}\nRaw: {raw[:500]}")
+        return {"error": f"JSON parse failed: {e}", "raw_output": raw[:2000]}
+
+
+# =============================================================================
+# AGENT 1 — DataEvaluatorAgent (data quality validation)
+# =============================================================================
 
 EVALUATOR_TOOLS = [
     {"type": "function", "function": {
         "name": "think",
-        "description": "Plan your evaluation strategy. Call first, and whenever you need to reconsider.",
+        "description": "Plan your data evaluation strategy.",
         "parameters": {"type": "object", "properties": {
             "thought": {"type": "string"}
         }, "required": ["thought"]}
     }},
     {"type": "function", "function": {
-        "name": "detect_anomaly",
-        "description": "Detect anomaly in a single station's data. Returns is_anomaly, reasons, COD/BOD/TSS.",
+        "name": "check_data_quality",
+        "description": "Check a dataset for nulls, zeros, missing fields, and outliers. Returns quality report.",
         "parameters": {"type": "object", "properties": {
-            "station_data": {"type": "string", "description": "JSON string of one station dict"}
-        }, "required": ["station_data"]}
+            "dataset_name": {"type": "string", "description": "Which dataset: 'onlimo', 'rainfall', 'sparing', 'sitala'"},
+            "data_json": {"type": "string", "description": "JSON string of the dataset to check"}
+        }, "required": ["dataset_name", "data_json"]}
     }},
     {"type": "function", "function": {
-        "name": "calculate_pollution_profile",
-        "description": "COD/BOD ratio → INDUSTRI (>4.0) / CAMPURAN (2-4) / DOMESTIK (<2).",
+        "name": "flag_outlier",
+        "description": "Flag a specific field value as an outlier with reasoning.",
         "parameters": {"type": "object", "properties": {
-            "cod": {"type": "number"}, "bod": {"type": "number"}
-        }, "required": ["cod", "bod"]}
-    }},
-    {"type": "function", "function": {
-        "name": "evaluate_rainfall_branching",
-        "description": "Check if anomaly is caused by rainfall runoff. total > 50mm/24h → LIMPASAN → stop Sparing investigation.",
-        "parameters": {"type": "object", "properties": {
-            "rainfall_data": {"type": "string", "description": "JSON string of rainfall dict for this station's location"}
-        }, "required": ["rainfall_data"]}
-    }},
-    {"type": "function", "function": {
-        "name": "check_sparing_compliance",
-        "description": "Evaluate TAAT/LANGGAR status for monitoring records.",
-        "parameters": {"type": "object", "properties": {
-            "monitoring_data": {"type": "string", "description": "JSON string list of monitoring records"}
-        }, "required": ["monitoring_data"]}
-    }},
-    {"type": "function", "function": {
-        "name": "cross_correlate_evidence",
-        "description": (
-            "Cross-correlate a station anomaly with Sparing violations. "
-            "Scores each violating industry on spatial distance, temporal consistency, "
-            "and pollution profile match. Returns ranked causal evidence (TINGGI/SEDANG/RENDAH). "
-            "ALWAYS call this after check_sparing_compliance — it is required for a valid evaluation."
-        ),
-        "parameters": {"type": "object", "properties": {
-            "station_json": {"type": "string", "description": "JSON string of the anomalous station"},
-            "step4_json":   {"type": "string", "description": "JSON string with industries list and violations"},
-            "step2_json":   {"type": "string", "description": "JSON string of pollution profile result"},
-        }, "required": ["station_json", "step4_json", "step2_json"]}
-    }},
-    {"type": "function", "function": {
-        "name": "calculate_ika_gap",
-        "description": "IKA actual vs target gap → urgency (TINDAK / WASPADA / PANTAU).",
-        "parameters": {"type": "object", "properties": {
-            "sitala_data": {"type": "string", "description": "JSON string of SITALA dict"}
-        }, "required": ["sitala_data"]}
+            "station_id": {"type": "string"},
+            "field_name": {"type": "string", "description": "e.g. 'amonia', 'cod', 'indeks_mutu'"},
+            "value": {"type": "number"},
+            "reason": {"type": "string", "description": "Why this value is suspicious"}
+        }, "required": ["station_id", "field_name", "value", "reason"]}
     }},
 ]
 
-EVALUATOR_TOOL_FUNCTIONS = {
-    "think":                    lambda args: think(args["thought"]),
-    "detect_anomaly":           lambda args: detect_anomaly(args["station_data"]),
-    "calculate_pollution_profile": lambda args: calculate_pollution_profile(args["cod"], args["bod"]),
-    "evaluate_rainfall_branching": lambda args: evaluate_rainfall_branching(args["rainfall_data"]),
-    "check_sparing_compliance": lambda args: check_sparing_compliance(args["monitoring_data"]),
-    "cross_correlate_evidence": lambda args: cross_correlate_evidence(
-                                    args["station_json"], args["step4_json"], args["step2_json"]
-                                ),
-    "calculate_ika_gap":        lambda args: calculate_ika_gap(args["sitala_data"]),
+
+def _check_data_quality(args: dict) -> str:
+    """Deterministic data quality checks."""
+    name = args.get("dataset_name", "")
+    try:
+        data = json.loads(args.get("data_json", "[]"))
+    except json.JSONDecodeError:
+        return json.dumps({"error": "Invalid JSON"})
+
+    if not isinstance(data, list):
+        data = [data]
+
+    issues = []
+    total = len(data)
+    null_counts = {}
+
+    for i, row in enumerate(data):
+        if not isinstance(row, dict):
+            continue
+        for key, val in row.items():
+            if val is None or val == "" or val == 0.0:
+                null_counts[key] = null_counts.get(key, 0) + 1
+            # Outlier check for known parameters
+            fv = safe_float(val) if isinstance(val, (int, float, str)) else 0
+            if name == "onlimo":
+                params = row.get("parameter", {})
+                if isinstance(params, dict):
+                    for pk, pv in params.items():
+                        fval = safe_float(pv)
+                        if pk == "amonia" and fval > 100:
+                            issues.append({"station": row.get("station_id"), "field": f"parameter.{pk}", "value": fval, "issue": f"Amonia {fval} mg/L sangat tinggi (normal <10)"})
+                        if pk == "ph" and fval > 0 and (fval < 3 or fval > 12):
+                            issues.append({"station": row.get("station_id"), "field": f"parameter.{pk}", "value": fval, "issue": f"pH {fval} di luar rentang fisik (3-12)"})
+                        if pk == "do" and fval > 20:
+                            issues.append({"station": row.get("station_id"), "field": f"parameter.{pk}", "value": fval, "issue": f"DO {fval} mg/L terlalu tinggi (normal <15)"})
+                        if pk == "cod" and fval > 1000:
+                            issues.append({"station": row.get("station_id"), "field": f"parameter.{pk}", "value": fval, "issue": f"COD {fval} mg/L ekstrem"})
+
+    # Fields with >50% null
+    high_null = {k: v for k, v in null_counts.items() if total > 0 and v / total > 0.5}
+
+    return json.dumps({
+        "dataset": name,
+        "total_records": total,
+        "outliers_found": len(issues),
+        "outliers": issues[:20],
+        "high_null_fields": high_null,
+        "quality_score": max(0, 100 - len(issues) * 5 - len(high_null) * 10),
+    }, ensure_ascii=False, indent=2)
+
+
+def _flag_outlier(args: dict) -> str:
+    return json.dumps({
+        "flagged": True,
+        "station_id": args.get("station_id"),
+        "field": args.get("field_name"),
+        "value": args.get("value"),
+        "reason": args.get("reason"),
+    })
+
+
+EVALUATOR_TOOL_FUNCS = {
+    "think":              lambda a: think(a["thought"]),
+    "check_data_quality": lambda a: _check_data_quality(a),
+    "flag_outlier":       lambda a: _flag_outlier(a),
 }
 
-EVALUATOR_SYSTEM_PROMPT = f"""You are a water quality DATA EVALUATOR for DAS {TARGET_DAS}, {TARGET_REGION}.
+EVALUATOR_SYSTEM = f"""You are the DATA EVALUATOR for WQSA — DAS {TARGET_DAS}, {TARGET_REGION}.
 
-== YOUR ONLY JOB ==
-Analyse the raw data bundle provided by the user. Use your tools to reason through the evidence.
-Output a single structured JSON object as your FINAL response. Nothing else.
+YOUR ONLY JOB: Validate data quality of the raw data bundle. Do NOT analyse pollution or generate recommendations.
 
-== EVALUATION SEQUENCE ==
-For EACH station in the data bundle:
+STEPS:
+1. think() — plan which datasets to check
+2. check_data_quality() for each dataset: onlimo, rainfall, sparing, sitala
+3. flag_outlier() for any extreme values that need attention
+4. Output JSON with cleaned data and quality report
 
-1. ANOMALY CHECK
-   - Call detect_anomaly(station_data) for each station
-   - Skip stations with is_anomaly=false
-
-2. POLLUTION PROFILE (anomalous stations only)
-   - Call calculate_pollution_profile(cod, bod)
-   - Extract COD and BOD from station's parameter field
-
-3. RAINFALL BRANCH (anomalous stations only)
-   - Call evaluate_rainfall_branching(rainfall_data)
-   - Use the rainfall entry from the bundle matching this station's kecamatan/coordinates
-   - If is_runoff=true → mark as LIMPASAN, skip steps 4-5 for this station
-
-4. COMPLIANCE CHECK (non-limpasan anomalous stations only)
-   - Call check_sparing_compliance(monitoring_data)
-   - Use the sparing monitoring data from the bundle for this station's district
-
-5. CAUSAL CROSS-CORRELATION (REQUIRED if violations found)
-   - Call cross_correlate_evidence(station_json, step4_json, step2_json)
-   - This is MANDATORY — never skip it when there are violations
-   - Use the compliance results as step4_json
-
-6. IKA GAP (once per region, not per station)
-   - Call calculate_ika_gap(sitala_data) using the SITALA entry from the bundle
-
-== REQUIRED OUTPUT FORMAT ==
-After all tool calls, output ONLY this JSON (no markdown, no prose):
-
+OUTPUT FORMAT (JSON only, no markdown):
 {{
-  "evaluation_id": "<station_id_or_'full_scan'>_<YYYYMMDD>",
-  "target": "<description of what was analysed>",
-  "timestamp": "<ISO timestamp>",
-  "anomalous_stations": [
-    {{
-      "station_id": "...",
-      "station_name": "...",
-      "indeks_mutu": 0.0,
-      "status": "...",
-      "is_limpasan": false,
-      "rainfall_mm": 0.0,
-      "pollution_profile": "INDUSTRI|CAMPURAN|DOMESTIK|DATA_TIDAK_VALID",
-      "cod_bod_ratio": 0.0,
-      "causal_evidence": [
-        {{
-          "company_name": "...",
-          "causal_confidence": "TINGGI|SEDANG|RENDAH",
-          "distance_km": 0.0,
-          "temporal_ok": true,
-          "profile_ok": true,
-          "violated_params": ["COD", "BOD"],
-          "evidence_notes": {{}}
-        }}
-      ],
-      "top_suspect": "company name or null",
-      "urgency": "TINDAK|WASPADA|PANTAU",
-      "anomaly_reasons": []
-    }}
-  ],
-  "normal_station_count": 0,
-  "ika_gap": 0.0,
-  "ika_urgency": "TINDAK|WASPADA|PANTAU",
-  "region_summary": "<2-3 sentence factual summary in English, no recommendations>"
-}}
+  "data_quality": {{
+    "overall_score": 0-100,
+    "issues_found": int,
+    "outliers": [{{ "station_id", "field", "value", "reason" }}],
+    "null_warnings": [{{ "dataset", "field", "null_pct" }}],
+    "excluded_stations": ["station_ids with critically bad data"]
+  }},
+  "cleaned_candidate_stations": [... stations suitable for analysis],
+  "cleaned_rainfall": {{ ... }},
+  "cleaned_sparing": {{ ... }},
+  "cleaned_sitala": [...]
+}}"""
 
-== RULES ==
-- Always call think() first to plan
-- ALWAYS call cross_correlate_evidence after finding violations
-- Output ONLY valid JSON as your final message — no preamble, no markdown fences
-- Do not write recommendations — that is the Analytical Agent's job
-- If data for a step is missing from the bundle, note it in the relevant field and continue"""
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# DataEvaluatorAgent
-# ─────────────────────────────────────────────────────────────────────────────
 
 class DataEvaluatorAgent:
-    """
-    Agentic evaluator that reasons over a pre-fetched data bundle.
-    Calls analysis tools iteratively, outputs structured EvaluationResult JSON.
-    """
+    def run(self, raw_bundle: dict) -> dict:
+        print("\n🔍 [DataEvaluator] Starting data quality check...")
+        print(f"   Model    : {EVALUATOR_MODEL}")
+        print(f"   API      : OpenRouter (single key, model routed by string)")
+        print(f"   Stations : {len(raw_bundle.get('candidate_stations', []))}")
+        raw = _run_loop(
+            EVALUATOR_MODEL, EVALUATOR_SYSTEM,
+            "Raw data bundle:\n\n" + json.dumps(raw_bundle, ensure_ascii=False, default=str),
+            EVALUATOR_TOOLS, EVALUATOR_TOOL_FUNCS,
+            max_steps=15, label="DataEvaluator",
+        )
+        result = _parse_json(raw, "DataEvaluator")
+        if "error" in result:
+            # Fallback: pass data through uncleaned
+            result["cleaned_candidate_stations"] = raw_bundle.get("candidate_stations", [])
+            result["cleaned_rainfall"] = raw_bundle.get("rainfall", {})
+            result["cleaned_sparing"] = raw_bundle.get("sparing", {})
+            result["cleaned_sitala"] = raw_bundle.get("sitala", [])
+            result["data_quality"] = {"overall_score": 0, "issues_found": 0, "outliers": [], "note": "Evaluator failed, data passed through uncleaned"}
+        return result
 
-    MAX_STEPS = 30  # Evaluator is focused — 30 steps should be plenty
 
-    def run(self, raw_data_bundle: dict) -> dict:
-        """
-        Run the evaluator on a raw_data_bundle dict.
-        Returns parsed EvaluationResult dict (or error dict).
-        """
-        logger.info("[EvaluatorAgent] Starting evaluation")
-        print("\n🔍 [DataEvaluatorAgent] Starting — analysing raw data bundle...")
-        print(f"   Stations in bundle: {len(raw_data_bundle.get('candidate_stations', []))}")
+# =============================================================================
+# AGENT 2 — DataAnalystAgent (reasoning chain)
+# =============================================================================
 
-        messages = [
-            {"role": "system",  "content": EVALUATOR_SYSTEM_PROMPT},
-            {"role": "user",    "content": (
-                "Here is the raw data bundle for your evaluation:\n\n"
-                + json.dumps(raw_data_bundle, ensure_ascii=False, default=str)
-            )},
-        ]
+ANALYST_TOOLS = [
+    {"type": "function", "function": {
+        "name": "think", "description": "Plan and reason about analysis steps.",
+        "parameters": {"type": "object", "properties": {"thought": {"type": "string"}}, "required": ["thought"]}
+    }},
+    {"type": "function", "function": {
+        "name": "detect_anomaly", "description": "Detect anomaly in station data: index >= 3.0, CEMAR status.",
+        "parameters": {"type": "object", "properties": {"station_data": {"type": "string"}}, "required": ["station_data"]}
+    }},
+    {"type": "function", "function": {
+        "name": "calculate_pollution_profile", "description": "COD/BOD ratio: >4=INDUSTRI, 2-4=CAMPURAN, <2=DOMESTIK.",
+        "parameters": {"type": "object", "properties": {"cod": {"type": "number"}, "bod": {"type": "number"}}, "required": ["cod", "bod"]}
+    }},
+    {"type": "function", "function": {
+        "name": "evaluate_rainfall_branching", "description": "Rainfall >50mm/24h → LIMPASAN → skip sparing investigation.",
+        "parameters": {"type": "object", "properties": {"rainfall_data": {"type": "string"}}, "required": ["rainfall_data"]}
+    }},
+    {"type": "function", "function": {
+        "name": "check_sparing_compliance", "description": "Check monitoring values vs baku mutu → TAAT/LANGGAR per parameter.",
+        "parameters": {"type": "object", "properties": {"monitoring_data": {"type": "string"}}, "required": ["monitoring_data"]}
+    }},
+    {"type": "function", "function": {
+        "name": "cross_correlate_evidence",
+        "description": "Cross-correlate station anomaly with Sparing violations: spatial + temporal + profile match. Call ONLY if violations exist.",
+        "parameters": {"type": "object", "properties": {
+            "station_json": {"type": "string"}, "step4_json": {"type": "string"}, "step2_json": {"type": "string"},
+        }, "required": ["station_json", "step4_json", "step2_json"]}
+    }},
+    {"type": "function", "function": {
+        "name": "calculate_ika_gap", "description": "IKA actual vs target → TINDAK/WASPADA/PANTAU.",
+        "parameters": {"type": "object", "properties": {"sitala_data": {"type": "string"}}, "required": ["sitala_data"]}
+    }},
+]
 
-        step = 0
-        for _ in range(self.MAX_STEPS):
-            response = _get_client().chat.completions.create(
-                model=AGENT_MODEL,
-                messages=messages,
-                tools=EVALUATOR_TOOLS,
-                tool_choice="auto",
+ANALYST_TOOL_FUNCS = {
+    "think":                       lambda a: think(a["thought"]),
+    "detect_anomaly":              lambda a: detect_anomaly(a["station_data"]),
+    "calculate_pollution_profile": lambda a: calculate_pollution_profile(a["cod"], a["bod"]),
+    "evaluate_rainfall_branching": lambda a: evaluate_rainfall_branching(a["rainfall_data"]),
+    "check_sparing_compliance":    lambda a: check_sparing_compliance(a["monitoring_data"]),
+    "cross_correlate_evidence":    lambda a: cross_correlate_evidence(a["station_json"], a["step4_json"], a["step2_json"]),
+    "calculate_ika_gap":           lambda a: calculate_ika_gap(a["sitala_data"]),
+}
+
+ANALYST_SYSTEM = f"""You are the DATA ANALYST for WQSA — DAS {TARGET_DAS}, {TARGET_REGION}.
+
+YOUR JOB: Analyse cleaned data from the DataEvaluator. Follow the reasoning chain strictly.
+
+CHAIN:
+1. detect_anomaly() per candidate station
+2. calculate_pollution_profile() for anomalous stations (use COD/BOD from parameter field)
+3. evaluate_rainfall_branching() using the rainfall data for the station's area
+4. check_sparing_compliance() using sparing monitoring data
+5. cross_correlate_evidence() ONLY if violations found (total_violations > 0)
+6. calculate_ika_gap() once per region
+
+If you receive FEEDBACK from the ReportEvaluator, address each question and revise your analysis.
+
+OUTPUT (JSON only):
+{{
+  "analysis_id": "string",
+  "timestamp": "ISO",
+  "anomalous_stations": [{{
+    "station_id": "...", "station_name": "...",
+    "indeks_mutu": 0.0, "status": "...",
+    "is_limpasan": false, "rainfall_mm": 0.0,
+    "pollution_profile": "INDUSTRI|CAMPURAN|DOMESTIK",
+    "cod_bod_ratio": 0.0,
+    "causal_evidence": [{{
+      "company_name": "...", "causal_confidence": "TINGGI|SEDANG|RENDAH",
+      "distance_km": 0.0, "violated_params": []
+    }}],
+    "top_suspect": "...", "urgency": "TINDAK|WASPADA|PANTAU",
+    "anomaly_reasons": []
+  }}],
+  "normal_station_count": 0,
+  "ika_gap": null, "ika_urgency": "..."
+}}"""
+
+
+class DataAnalystAgent:
+    def run(self, cleaned_data: dict, feedback: Optional[str] = None) -> dict:
+        label = "DataAnalyst"
+        if feedback:
+            print(f"\n🔄 [{label}] Re-analysing with feedback from ReportEvaluator...")
+            print(f"   Model    : {ANALYST_MODEL}")
+            print(f"   API      : OpenRouter (single key, model routed by string)")
+            content = (
+                "Cleaned data bundle:\n\n" + json.dumps(cleaned_data, ensure_ascii=False, default=str)
+                + "\n\n--- FEEDBACK FROM REPORT EVALUATOR ---\n" + feedback
             )
-            msg = response.choices[0].message
+        else:
+            print(f"\n📊 [{label}] Starting analysis...")
+            print(f"   Model      : {ANALYST_MODEL}")
+            print(f"   API        : OpenRouter (single key, model routed by string)")
+            print(f"   Candidates : {len(cleaned_data.get('cleaned_candidate_stations', []))}")
+            content = "Cleaned data bundle:\n\n" + json.dumps(cleaned_data, ensure_ascii=False, default=str)
 
-            # No tool calls → LLM is done, this should be the JSON output
-            if not msg.tool_calls:
-                raw_text = (msg.content or "").strip()
-                print(f"  ✅ [EvaluatorAgent] Done — {step} tool calls")
-                logger.info(f"[EvaluatorAgent] Finished after {step} tool calls")
-                return self._parse_output(raw_text)
+        raw = _run_loop(
+            ANALYST_MODEL, ANALYST_SYSTEM, content,
+            ANALYST_TOOLS, ANALYST_TOOL_FUNCS,
+            max_steps=30, label=label,
+        )
+        return _parse_json(raw, label)
 
-            # Execute tool calls
-            messages.append({
-                "role": "assistant",
-                "content": msg.content,
-                "tool_calls": [
-                    {"id": tc.id, "type": "function",
-                     "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
-                    for tc in msg.tool_calls
-                ],
-            })
 
-            for tc in msg.tool_calls:
-                step += 1
-                tool_name = tc.function.name
-                tool_args = json.loads(tc.function.arguments)
+# =============================================================================
+# AGENT 3 — ReportEvaluatorAgent (validate + format for dashboard)
+# =============================================================================
 
-                # Summarise args for readable terminal output
-                arg_summary = ", ".join(
-                    f"{k}={str(v)[:60]}" for k, v in tool_args.items()
-                )
-                print(f"  [{step:02d}] → {tool_name}({arg_summary})")
-                logger.info(f"[EvaluatorAgent] Step {step}: {tool_name}({list(tool_args.keys())})")
+REPORTER_SYSTEM = f"""You are the REPORT EVALUATOR for WQSA — DAS {TARGET_DAS}, {TARGET_REGION}.
 
-                if tool_name in EVALUATOR_TOOL_FUNCTIONS:
-                    try:
-                        result = EVALUATOR_TOOL_FUNCTIONS[tool_name](tool_args)
-                        # Print a brief result preview
-                        preview = str(result)[:120].replace("\n", " ")
-                        print(f"       ↳ {preview}{'...' if len(str(result)) > 120 else ''}")
-                    except Exception as e:
-                        result = json.dumps({"error": str(e)})
-                        print(f"       ↳ ERROR: {e}")
-                        logger.error(f"[EvaluatorAgent] {tool_name} failed: {e}")
-                else:
-                    result = json.dumps({"error": f"Unknown tool: {tool_name}"})
-                    print(f"       ↳ ERROR: unknown tool '{tool_name}'")
+You receive an AnalysisResult JSON from the DataAnalyst.
+You have TWO possible actions:
 
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": str(result),
-                })
+ACTION A — SEND FEEDBACK (if inconsistencies found):
+Return JSON with "action": "feedback" and questions for the analyst.
 
-        logger.warning("[EvaluatorAgent] Reached MAX_STEPS without finishing")
-        return {"error": f"Evaluator exceeded {self.MAX_STEPS} steps", "partial": True}
+ACTION B — FORMAT OUTPUT (if analysis is valid):
+Return JSON with "action": "accept" and dashboard-ready payload.
 
-    def _parse_output(self, raw: str) -> dict:
-        """Parse the LLM's JSON output, strip markdown fences if present."""
+CHECK FOR THESE INCONSISTENCIES:
+1. Confidence TINGGI but evidence is weak (only 1 of 3 dimensions true)
+2. Urgency TINDAK but no violating companies identified
+3. Pollution profile INDUSTRI but no Sparing loggers found
+4. Station CEMAR BERAT but all parameters below normal thresholds
+5. IKA gap positive but urgency is TINDAK
+6. Rainfall >50mm but is_limpasan=false
+7. Cross-correlation TINGGI but distance >10km
+8. Recommendations mention companies not in sparing data
+9. Anomalous station count in summary doesn't match detail entries
+10. Violation date newer than anomaly date (temporal inversion)
+
+OUTPUT FORMAT — Feedback:
+{{
+  "action": "feedback",
+  "issues": ["description of each inconsistency found"],
+  "questions": ["specific question for the analyst to address"]
+}}
+
+OUTPUT FORMAT — Accept:
+{{
+  "action": "accept",
+  "analysis_highlight": {{
+    "overall_urgency": "PANTAU|WASPADA|TINDAK",
+    "total_anomalous": int,
+    "total_normal": int,
+    "top_stations": [{{
+      "station_id": "...", "station_name": "...",
+      "status": "...", "indeks_mutu": 0.0,
+      "urgency": "...", "pollution_profile": "...",
+      "top_suspect": "...", "causal_confidence": "...",
+      "key_finding": "1-sentence summary"
+    }}],
+    "priority_actions": [{{
+      "priority": 1, "action": "...", "target": "...", "deadline": "..."
+    }}]
+  }},
+  "detail_reasoning": {{
+    "per_station": [{{
+      "station_id": "...", "station_name": "...",
+      "steps": [
+        {{"step": 1, "name": "Scan", "result": "..."}},
+        {{"step": 2, "name": "Profil Pencemar", "result": "..."}},
+        {{"step": 3, "name": "Curah Hujan", "result": "..."}},
+        {{"step": 4, "name": "Korelasi Sparing", "result": "..."}},
+        {{"step": 5, "name": "IKA & Urgensi", "result": "..."}}
+      ],
+      "causal_chain": [{{...}}]
+    }}],
+    "data_quality_note": "..."
+  }},
+  "kpi_update": {{
+    "total_stations": int, "critical": int, "warning": int, "good": int,
+    "max_rain_mm": float, "langgar_count": int
+  }},
+  "telegram_message": "formatted summary for auto-send to Telegram",
+  "ika_summary": {{"actual": float, "target": float, "gap": float, "urgency": "..."}}
+}}
+
+RULES:
+- Output ONLY valid JSON
+- Bahasa Indonesia for telegram_message and key_finding
+- Be strict about inconsistencies — if something doesn't add up, use Action A"""
+
+
+class ReportEvaluatorAgent:
+    def run(self, analysis_result: dict, data_quality: Optional[dict] = None) -> dict:
+        print(f"\n🧠 [ReportEvaluator] Validating analysis...")
+        print(f"   Model : {REPORTER_MODEL}")
+        print(f"   API   : OpenRouter (single key, model routed by string)")
+
+        context = "AnalysisResult:\n\n" + json.dumps(analysis_result, ensure_ascii=False, indent=2, default=str)
+        if data_quality:
+            context += "\n\nData Quality Report:\n" + json.dumps(data_quality, ensure_ascii=False, indent=2)
+
         try:
-            # Strip ```json ... ``` or ``` ... ``` wrappers
-            clean = raw.strip()
-            if clean.startswith("```"):
-                clean = clean.split("```", 2)[1]
-                if clean.startswith("json"):
-                    clean = clean[4:]
-                clean = clean.rsplit("```", 1)[0].strip()
-            return json.loads(clean)
-        except json.JSONDecodeError as e:
-            logger.error(f"[EvaluatorAgent] JSON parse failed: {e}\nRaw: {raw[:500]}")
-            return {"error": f"Could not parse evaluator output: {e}", "raw": raw[:1000]}
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# AnalyticalAgent
-# ─────────────────────────────────────────────────────────────────────────────
-
-ANALYTICAL_SYSTEM_PROMPT = f"""Kamu adalah analis kualitas air sungai Indonesia untuk DAS {TARGET_DAS}.
-
-Kamu menerima hasil evaluasi terstruktur dari Data Evaluator Agent. Tugasmu adalah
-menginterpretasikan temuan tersebut dan menulis laporan rekomendasi yang jelas dan actionable.
-
-Format laporan:
-
-📍 RINGKASAN SITUASI
-[Gambaran umum: berapa stasiun anomali, lokasi kritis, kondisi umum DAS]
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[Untuk setiap stasiun anomali:]
-
-📊 [STATION_ID] — [STATION_NAME]
-Status: [indeks mutu + status]
-Profil Pencemar: [INDUSTRI/CAMPURAN/DOMESTIK, COD/BOD ratio]
-Curah Hujan: [mm/24h, LIMPASAN atau tidak]
-Tersangka Utama: [nama perusahaan, confidence TINGGI/SEDANG/RENDAH]
-  • Bukti: [jarak km, tanggal pelanggaran, parameter yang dilanggar]
-Urgensi: [emoji] [PANTAU/WASPADA/TINDAK]
-
-📋 REKOMENDASI TINDAKAN:
-1. [Tindakan spesifik, sebutkan nama perusahaan dan parameter]
-2. [Tindakan lanjutan]
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📈 BENCHMARK IKA WILAYAH
-IKA aktual vs target: [nilai + gap]
-Trend: [naik/turun/stabil]
-
-⚠️ LEVEL URGENSI KESELURUHAN: [emoji] [PANTAU/WASPADA/TINDAK]
-🎯 CONFIDENCE ANALISIS: [persentase, berdasarkan kelengkapan data dan kekuatan bukti]
-
-== ATURAN ==
-- Gunakan Bahasa Indonesia
-- Jika evaluasi menemukan LIMPASAN, jelaskan mengapa atribusi ke industri tidak dapat dilakukan
-- Jika confidence RENDAH, sebutkan keterbatasan data
-- Rekomendasikan tindakan spesifik (sebut nama perusahaan, parameter, tenggat waktu)
-- Jangan membuat asumsi di luar data yang diberikan"""
-
-
-class AnalyticalAgent:
-    """
-    Single-call analytical agent.
-    Receives EvaluationResult from DataEvaluatorAgent, writes the final report.
-    No tools — pure LLM reasoning on structured input.
-    """
-
-    def run(self, evaluation: dict) -> str:
-        """
-        Generate a final report from an EvaluationResult dict.
-        Returns formatted report string.
-        """
-        logger.info("[AnalyticalAgent] Generating report")
-        print("\n📝 [AnalyticalAgent] Generating recommendation report...")
-
-        if "error" in evaluation:
-            return (
-                f"⚠️ Evaluator agent encountered an error: {evaluation['error']}\n"
-                f"Partial results may be incomplete. Please retry or check the logs."
-            )
-
-        anomalous = evaluation.get("anomalous_stations", [])
-        if not anomalous:
-            return (
-                f"✅ *Tidak ada anomali terdeteksi*\n\n"
-                f"Seluruh stasiun dalam kondisi normal. "
-                f"Monitoring rutin dapat dilanjutkan sesuai jadwal.\n\n"
-                f"IKA Gap: {evaluation.get('ika_gap', 'N/A')} | "
-                f"Urgensi IKA: {evaluation.get('ika_urgency', 'N/A')}"
-            )
-
-        try:
-            response = _get_client().chat.completions.create(
-                model=AGENT_MODEL,
+            response = _get_client(REPORTER_MODEL).chat.completions.create(
+                model=REPORTER_MODEL,
                 messages=[
-                    {"role": "system", "content": ANALYTICAL_SYSTEM_PROMPT},
-                    {"role": "user",   "content": (
-                        "Berikut hasil evaluasi dari Data Evaluator Agent:\n\n"
-                        + json.dumps(evaluation, ensure_ascii=False, indent=2, default=str)
-                    )},
+                    {"role": "system", "content": REPORTER_SYSTEM},
+                    {"role": "user", "content": context},
                 ],
             )
-            report = response.choices[0].message.content.strip()
-            logger.info("[AnalyticalAgent] Report generated")
-            print("  ✅ [AnalyticalAgent] Report complete")
-            return report
+            raw = response.choices[0].message.content.strip()
+            result = _parse_json(raw, "ReportEvaluator")
+
+            action = result.get("action", "accept")
+            if action == "feedback":
+                print(f"  🔄 [ReportEvaluator] Found {len(result.get('issues', []))} issues — sending feedback")
+            else:
+                print(f"  ✅ [ReportEvaluator] Analysis accepted — formatting for dashboard")
+            return result
+
         except Exception as e:
-            logger.error(f"[AnalyticalAgent] Failed: {e}")
-            return f"❌ Analytical agent failed: {e}"
+            logger.error(f"[ReportEvaluator] Failed: {e}")
+            return {"action": "accept", "error": str(e), "analysis_highlight": {}, "detail_reasoning": {}}

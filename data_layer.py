@@ -36,17 +36,21 @@ logger = logging.getLogger(__name__)
 # DATABASE CONNECTION (reconnect-on-demand singleton)
 # =============================================================================
 
-_db_conn: Optional[pymysql.Connection] = None
+import threading
+
+# Thread-local storage — each Flask thread gets its own connection
+_local = threading.local()
 
 
 def _get_db() -> pymysql.Connection:
-    global _db_conn
+    """Return a per-thread MySQL connection, reconnecting if needed."""
+    conn = getattr(_local, "conn", None)
     try:
-        if _db_conn is None or not _db_conn.open:
-            raise pymysql.err.InterfaceError
-        _db_conn.ping(reconnect=True)
+        if conn is None or not conn.open:
+            raise pymysql.err.InterfaceError("no connection")
+        conn.ping(reconnect=True)
     except Exception:
-        _db_conn = pymysql.connect(
+        conn = pymysql.connect(
             host=MYSQL_HOST,
             port=MYSQL_PORT,
             user=MYSQL_USER,
@@ -56,7 +60,8 @@ def _get_db() -> pymysql.Connection:
             cursorclass=pymysql.cursors.DictCursor,
             autocommit=True,
         )
-    return _db_conn
+        _local.conn = conn
+    return conn
 
 
 def _query(sql: str, params: tuple = ()) -> list[dict]:
@@ -323,7 +328,7 @@ def get_sparing_logger_data(das: str = "", district: str = "") -> list[dict]:
 
 def _normalize_sparing_logger(row: dict) -> dict:
     return {
-        "company_id":       row.get("id_logger") or str(row.get("logger_id")),
+        "company_id":       str(row.get("logger_id")),
         "id_logger":        row.get("id_logger"),
         "company_name":     row.get("company_name"),
         "outlet_name":      row.get("outlet_name"),
@@ -561,3 +566,180 @@ def get_station_history(station_id: str, days: int = 30) -> list[dict]:
     except Exception as e:
         logger.error(f"get_station_history failed: {e}")
         return []
+
+
+# =============================================================================
+# 7. DASHBOARD-SPECIFIC QUERIES (used by dashboard.py)
+# =============================================================================
+
+def get_all_onlimo_flat(das: str = "") -> list[dict]:
+    conditions = ["1=1"]
+    params = []
+    if das:
+        conditions.append("nama_das = %s")
+        params.append(das)
+    sql = f"SELECT * FROM v_onlimo_terbaru WHERE {' AND '.join(conditions)} ORDER BY station_id"
+    try:
+        rows = _query(sql, tuple(params))
+        return [{
+            "station_id":   r.get("station_id"),
+            "station_name": r.get("station_name"),
+            "das":          r.get("nama_das"),
+            "kabkot":       r.get("kabkot"),
+            "kecamatan":    r.get("kecamatan"),
+            "latitude":     safe_float(r.get("latitude")),
+            "longitude":    safe_float(r.get("longitude")),
+            "indeks_mutu":  safe_float(r.get("indeks_mutu")),
+            "status":       r.get("status_mutu") or "TIDAK DIKETAHUI",
+            "status_warna": r.get("status_warna"),
+            "cod":          safe_float(r.get("cod")),
+            "bod":          safe_float(r.get("bod")),
+            "tss":          safe_float(r.get("tss")),
+            "do":           safe_float(r.get("do_val")),
+            "ph":           safe_float(r.get("ph")),
+            "amonia":       safe_float(r.get("amonia")),
+            "timestamp":    str(r.get("tanggal_ukur") or ""),
+        } for r in rows]
+    except Exception as e:
+        logger.error(f"get_all_onlimo_flat: {e}")
+        return []
+
+
+def get_all_rainfall_data() -> list[dict]:
+    try:
+        rows = _query("SELECT * FROM v_bmkg_terbaru ORDER BY total_rainfall_mm DESC")
+        return [{
+            "adm4_code":         r.get("adm4"),
+            "kotkab":            r.get("kotkab"),
+            "kecamatan":         r.get("kecamatan"),
+            "desa":              r.get("desa"),
+            "location":          r.get("desa") or r.get("kecamatan") or "?",
+            "latitude":          safe_float(r.get("latitude")),
+            "longitude":         safe_float(r.get("longitude")),
+            "tanggal":           str(r.get("tanggal") or ""),
+            "total_rainfall_mm": safe_float(r.get("total_rainfall_mm")),
+            "max_rainfall_mm":   safe_float(r.get("max_rainfall_mm")),
+            "is_high_rainfall":  safe_float(r.get("total_rainfall_mm")) > RAINFALL_HIGH_MM,
+        } for r in rows]
+    except Exception as e:
+        logger.error(f"get_all_rainfall_data: {e}")
+        return []
+
+
+def get_sparing_summary() -> dict:
+    try:
+        rows = _query("""
+            SELECT
+                SUM(CASE WHEN status_taat = 'TAAT' THEN 1 ELSE 0 END)       AS taat,
+                SUM(CASE WHEN status_taat = 'TIDAK TAAT' THEN 1 ELSE 0 END) AS langgar,
+                COUNT(*) AS total
+            FROM v_sparing_kepatuhan_terkini
+        """)
+        r = rows[0] if rows else {}
+        return {"taat": safe_int(r.get("taat")), "langgar": safe_int(r.get("langgar")), "total": safe_int(r.get("total"))}
+    except Exception as e:
+        logger.error(f"get_sparing_summary: {e}")
+        return {"taat": 0, "langgar": 0, "total": 0}
+
+
+def get_sparing_violations() -> list[dict]:
+    try:
+        rows = _query("""
+            SELECT * FROM v_sparing_kepatuhan_terkini
+            WHERE status_taat = 'TIDAK TAAT'
+            ORDER BY reported_at DESC
+        """)
+        return [{
+            "company_name":  r.get("industri_name"),
+            "industry_type": r.get("industri_type"),
+            "outlet_name":   r.get("outlet_name"),
+            "parameter":     r.get("parameter_name"),
+            "value":         safe_float(r.get("value")),
+            "baku_mutu":     safe_float(r.get("baku_mutu")),
+            "unit":          r.get("unit") or "mg/L",
+            "pct_of_bm":     round(safe_float(r.get("value")) / safe_float(r.get("baku_mutu")) * 100, 1) if safe_float(r.get("baku_mutu")) > 0 else 0,
+            "reported_at":   str(r.get("reported_at") or ""),
+            "status":        "LANGGAR",
+        } for r in rows]
+    except Exception as e:
+        logger.error(f"get_sparing_violations: {e}")
+        return []
+
+
+def get_sparing_company_summary() -> list[dict]:
+    try:
+        rows = _query("""
+            SELECT
+                industri_name, industri_type,
+                SUM(CASE WHEN status_taat = 'TAAT' THEN 1 ELSE 0 END)       AS taat,
+                SUM(CASE WHEN status_taat = 'TIDAK TAAT' THEN 1 ELSE 0 END) AS langgar,
+                COUNT(*) AS total
+            FROM v_sparing_kepatuhan_terkini
+            GROUP BY industri_name, industri_type
+            ORDER BY langgar DESC, industri_name
+        """)
+        return [{"company_name": r.get("industri_name"), "industry_type": r.get("industri_type"),
+                 "taat": safe_int(r.get("taat")), "langgar": safe_int(r.get("langgar")), "total": safe_int(r.get("total"))}
+                for r in rows]
+    except Exception as e:
+        logger.error(f"get_sparing_company_summary: {e}")
+        return []
+
+
+def get_all_sitala_with_urgency() -> list[dict]:
+    from config import IKA_GAP_WARNING, IKA_GAP_CRITICAL
+    try:
+        rows = _query("SELECT * FROM v_sitala_terbaru ORDER BY nama_kabkota")
+        result = []
+        for r in rows:
+            gap = safe_float(r.get("gap_ika"))
+            urgency = "TINDAK" if gap <= IKA_GAP_CRITICAL else "WASPADA" if gap <= IKA_GAP_WARNING else "PANTAU"
+            result.append({"kabkot": r.get("nama_kabkota"), "provinsi": r.get("nama_provinsi"),
+                           "tahun": safe_int(r.get("tahun")), "ika": safe_float(r.get("ika")),
+                           "target_ika": safe_float(r.get("target_ika")), "gap_ika": gap,
+                           "iklh": safe_float(r.get("iklh")), "trend_yoy": safe_float(r.get("trend_yoy")),
+                           "urgency": urgency})
+        return result
+    except Exception as e:
+        logger.error(f"get_all_sitala_with_urgency: {e}")
+        return []
+
+
+def get_all_anomaly_log(limit: int = 30) -> list[dict]:
+    try:
+        rows = _query("SELECT * FROM anomaly_log ORDER BY tanggal_deteksi DESC LIMIT %s", (limit,))
+        return [{"id": r.get("id"), "station_id": r.get("station_id"),
+                 "logged_at": str(r.get("tanggal_deteksi") or ""),
+                 "indeks_mutu": safe_float(r.get("indeks_mutu")), "status_mutu": r.get("status_mutu"),
+                 "is_anomaly": bool(r.get("is_anomaly")), "critical_parameter": r.get("critical_parameter"),
+                 "pollution_profile": r.get("pollution_profile"), "cod_bod_ratio": safe_float(r.get("cod_bod_ratio")),
+                 "rainfall_mm_24h": safe_float(r.get("rainfall_mm_24h")), "is_runoff": bool(r.get("is_runoff")),
+                 "urgency_level": r.get("urgency_level"), "ika_gap": safe_float(r.get("ika_gap")),
+                 "recommendation": r.get("recommendation"), "session_id": r.get("session_id")}
+                for r in rows]
+    except Exception as e:
+        logger.error(f"get_all_anomaly_log: {e}")
+        return []
+
+
+def get_dashboard_summary() -> dict:
+    try:
+        s = (_query("""
+            SELECT COUNT(*) AS total,
+                SUM(CASE WHEN status_warna = 'MERAH' THEN 1 ELSE 0 END)   AS critical,
+                SUM(CASE WHEN status_warna = 'KUNING' THEN 1 ELSE 0 END)  AS warning,
+                SUM(CASE WHEN status_warna = 'HIJAU' THEN 1 ELSE 0 END)   AS good
+            FROM v_onlimo_terbaru
+        """) or [{}])[0]
+        max_rain = safe_float(((_query("SELECT MAX(total_rainfall_mm) AS m FROM v_bmkg_terbaru") or [{}])[0]).get("m"))
+        langgar = safe_int(((_query("""
+            SELECT COUNT(*) AS cnt FROM sparing_monitoring
+            WHERE status_taat = 'TIDAK TAAT'
+              AND reported_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+        """) or [{}])[0]).get("cnt"))
+        return {"total_stations": safe_int(s.get("total")), "critical": safe_int(s.get("critical")),
+                "warning": safe_int(s.get("warning")), "good": safe_int(s.get("good")),
+                "max_rainfall_mm": max_rain, "sparing_langgar": langgar}
+    except Exception as e:
+        logger.error(f"get_dashboard_summary: {e}")
+        return {"total_stations": 0, "critical": 0, "warning": 0, "good": 0, "max_rainfall_mm": 0, "sparing_langgar": 0}
