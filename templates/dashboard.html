@@ -576,12 +576,16 @@ footer {
     <div class="section-card h-100 d-flex flex-column">
       <div class="card-title-bar">
         <div class="title"><i class="bi bi-graph-up-arrow"></i> Hasil Analisis Agent</div>
-        <div class="d-flex gap-2" id="result-actions" style="display:none!important">
+        <div class="d-flex gap-2 flex-wrap" id="result-actions" style="display:none!important">
           <button class="btn-analyze-outline btn btn-sm" onclick="showDetail()">
             <i class="bi bi-file-text"></i>Detail
           </button>
           <button class="btn-analyze-outline btn btn-sm" onclick="sendTelegram()">
             <i class="bi bi-send"></i>Telegram
+          </button>
+          <button class="btn btn-danger btn-sm" onclick="exportAnalysisPDF()"
+            style="border-radius:8px;font-size:.8rem;font-weight:600">
+            <i class="bi bi-file-earmark-pdf me-1"></i>Ekspor PDF
           </button>
         </div>
       </div>
@@ -674,7 +678,7 @@ footer {
             <div class="d-flex justify-content-between align-items-center mb-1">
               <div class="d-flex align-items-center gap-2">
                 <i class="bi bi-chat-quote text-primary"></i>
-                <span style="font-size:.72rem;font-weight:700;text-transform:uppercase;
+                <span class="nar-title-label" style="font-size:.72rem;font-weight:700;text-transform:uppercase;
                   letter-spacing:.5px;color:var(--text-muted)">Narasi Analisis Agent</span>
               </div>
               <button class="btn btn-link btn-sm p-0" onclick="toggleNarrative()"
@@ -708,7 +712,13 @@ footer {
     <div class="section-card h-100 d-flex flex-column">
       <div class="card-title-bar">
         <div class="title"><i class="bi bi-table"></i> Data Stasiun Onlimo</div>
-        <span style="font-size:.72rem;color:var(--text-muted)" id="station-count-info"></span>
+        <div class="d-flex align-items-center gap-2">
+          <span style="font-size:.72rem;color:var(--text-muted)" id="station-count-info"></span>
+          <button class="btn btn-outline-danger btn-sm py-0 px-2" onclick="exportStationsPDF()"
+            style="font-size:.72rem;border-radius:6px" title="Ekspor tabel ke PDF">
+            <i class="bi bi-file-earmark-pdf me-1"></i>PDF
+          </button>
+        </div>
       </div>
       <div class="tbl-wrap" style="max-height:390px">
         <table class="table data-table">
@@ -1045,6 +1055,7 @@ footer {
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 
 <script>
 // ── State ─────────────────────────────────────────────────────────────
@@ -2143,13 +2154,13 @@ function renderResult(result){
       </div>`).join('')
     :'<div class="text-muted text-center py-2 small">Tidak ada rekomendasi.</div>';
 
-  // Narrative
+  // Bangun narasi dari data terstruktur
   _narrativeVisible=false;
   document.getElementById('narrative-section').style.display='none';
   document.getElementById('narrative-body').style.display='none';
   if(document.getElementById('narrative-toggle'))
     document.getElementById('narrative-toggle').innerHTML='<i class="bi bi-chevron-down"></i> Tampilkan';
-  if(result.analyst_narrative) renderNarrative(result.analyst_narrative);
+  buildNarrativeFromResult(result);
 
   document.getElementById('result-content').classList.remove('d-none');
   document.getElementById('result-actions').style.display='flex';
@@ -2163,6 +2174,82 @@ function toggleNarrative(){
     ?'<i class="bi bi-chevron-up"></i> Sembunyikan'
     :'<i class="bi bi-chevron-down"></i> Tampilkan';
 }
+// ── Build Narrative from Structured Result ────────────────────────────
+function buildNarrativeFromResult(result) {
+  if (!result) return;
+
+  const hl  = result.analysis_highlight || {};
+  const dr  = result.detail_reasoning  || {};
+  const rel = result.data_reliability  || {};
+  const dq  = result.data_quality      || {};
+  const perStation = dr.per_station    || [];
+
+  // Sumber 1: detail_reasoning.per_station (paling informatif)
+  if (perStation.length > 0) {
+    const sections = perStation.map(st => _buildStationNarrative(st, hl, rel));
+    const joined = sections.join('\n\n---\n\n');
+    renderNarrative(joined, 'structured');
+    return;
+  }
+
+  // Sumber 2: telegram_message (ringkasan bersih dalam Bahasa Indonesia)
+  const tg = result.telegram_message || '';
+  if (tg && tg.trim().length > 50) {
+    renderNarrative(tg, 'telegram');
+    return;
+  }
+
+  // Sumber 3: analyst_narrative (raw think() fallback)
+  if (result.analyst_narrative && result.analyst_narrative.trim().length > 50) {
+    renderNarrative(result.analyst_narrative, 'think');
+    return;
+  }
+}
+
+function _buildStationNarrative(st, hl, rel) {
+  const sid   = st.station_id   || '–';
+  const sname = st.station_name || '';
+  const steps = st.steps        || [];
+  const causal = st.causal_chain || [];
+
+  // Cari info urgency dari top_stations
+  const topSt = (hl.top_stations || []).find(s => s.station_id === sid);
+  const urgency = topSt?.urgency || '';
+  const keyFinding = topSt?.key_finding || '';
+
+  let text = `**${sid}** — ${sname}`;
+  if (urgency) text += `  [${urgency}]`;
+  if (keyFinding) text += `\n${keyFinding}`;
+  text += '\n';
+
+  // 5-Step reasoning chain
+  if (steps.length > 0) {
+    text += '\nRANTAI ANALISIS (5 Langkah):\n';
+    steps.forEach(step => {
+      const result = (step.result || '–').trim();
+      text += `\nStep ${step.step} — ${step.name}:\n${result}`;
+    });
+  }
+
+  // Causal evidence
+  if (causal.length > 0) {
+    text += '\n\nBUKTI KAUSAL:\n';
+    causal.forEach(c => {
+      const conf   = c.causal_confidence || '–';
+      const co     = c.company_name      || '–';
+      const dist   = c.distance_km != null ? `${c.distance_km} km` : '–';
+      const params = (c.violated_params  || []).join(', ') || '–';
+      text += `- ${co}: confidence=${conf}, jarak=${dist}, params=${params}\n`;
+    });
+  }
+
+  // Data quality note
+  const dqNote = st.data_quality_note || (rel.warning ? `⚠️ ${rel.warning}` : '');
+  if (dqNote) text += `\nCATATAN KUALITAS DATA:\n${dqNote}`;
+
+  return text.trim();
+}
+
 // ── Narrative Helpers ─────────────────────────────────────────────────
 function highlightNarrativeText(text){
   const esc = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -2196,27 +2283,42 @@ function _stepTypeLabel(type){
   }[type] || 'Reasoning';
 }
 
-function renderNarrative(text){
+function renderNarrative(text, source='think'){
   if(!text||!text.trim())return;
 
   const sections = text.split(/\n\s*---\s*\n/).filter(s=>s.trim());
 
   let html = '';
-  if(sections.length > 1){
-    sections.forEach((section, i) => {
-      const trimmed = section.trim();
-      if(!trimmed) return;
+  // Filter sections yang punya konten nyata (bukan hanya heading kosong)
+  const validSections = sections.filter(s => {
+    const t = s.trim();
+    if(!t) return false;
+    const lines = t.split('\n').filter(l=>l.trim());
+    // Skip jika hanya 1 baris pendek (judul saja tanpa isi)
+    if(lines.length <= 1 && t.length < 80) return false;
+    // Skip jika semua baris adalah header pendek berakhir ':'
+    if(lines.every(l => l.trim().length < 60 && l.trim().endsWith(':'))) return false;
+    // Harus punya setidaknya satu baris substansial (> 60 chars atau banyak baris)
+    const hasSubstance = lines.some(l=>l.trim().length > 60) || lines.length >= 4;
+    return hasSubstance;
+  });
 
+  if(validSections.length > 0){
+    validSections.forEach((section, i) => {
+      const trimmed = section.trim();
       const lines = trimmed.split('\n');
-      // Judul: ambil baris pertama yang tidak kosong, bersihkan markdown
+
+      // Judul: baris pertama non-kosong
       let titleRaw = lines[0].replace(/^\*\*|\*\*$/g,'').replace(/^#+\s*/,'').replace(/^-\s*/,'').trim();
       if(!titleRaw && lines.length>1) titleRaw = lines[1].trim();
       const title = titleRaw.length>90 ? titleRaw.slice(0,87)+'…' : titleRaw;
-      const body  = (lines.length>1 ? lines.slice(1).join('\n') : trimmed).trim();
+
+      // Body: sisa setelah baris pertama
+      const bodyLines = lines.slice(1).filter(l=>l.trim());
+      const body = bodyLines.join('\n').trim();
 
       const type  = _detectStepType(trimmed);
       const label = _stepTypeLabel(type);
-      // Buka block pertama secara default
       const isOpen = i === 0;
 
       html += `
@@ -2228,16 +2330,29 @@ function renderNarrative(text){
           <i class="bi bi-chevron-up nar-chevron"></i>
         </div>
         <div class="nar-think-body" style="display:${isOpen?'block':'none'}">
-          ${highlightNarrativeText(body||trimmed)}
+          ${highlightNarrativeText(body || trimmed)}
         </div>
       </div>`;
     });
+  } else if(sections.length > 0) {
+    // Semua section terlalu pendek — tampilkan semua sebagai satu blok
+    const combined = sections.map(s=>s.trim()).filter(Boolean).join('\n\n');
+    html = `<div class="narrative-box">${highlightNarrativeText(combined)}</div>`;
   } else {
     html = `<div class="narrative-box">${highlightNarrativeText(text)}</div>`;
   }
 
   document.getElementById('narrative-content').innerHTML = html;
   document.getElementById('narrative-section').style.display = 'block';
+
+  // Tampilkan label sumber di header
+  const srcLabel = {
+    structured: '<span class="badge bg-success ms-1" style="font-size:.62rem">5-Step Chain</span>',
+    telegram:   '<span class="badge bg-info text-dark ms-1" style="font-size:.62rem">Ringkasan</span>',
+    think:      '<span class="badge bg-secondary ms-1" style="font-size:.62rem">Reasoning</span>',
+  }[source] || '';
+  const narTitle = document.querySelector('#narrative-section .nar-title-label');
+  if(narTitle && srcLabel) narTitle.innerHTML += srcLabel;
 
   if(text.includes('TINDAK')||text.includes('WASPADA'))
     if(!_narrativeVisible) toggleNarrative();
@@ -2310,6 +2425,354 @@ async function sendTelegram(){
       {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:chatId})})).json();
     alert(d.sent?'✅ Terkirim ke Telegram!':'❌ Gagal: '+(d.error||'unknown'));
   }catch(e){alert('Error: '+e.message)}
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// PDF EXPORT
+// ═══════════════════════════════════════════════════════════════════════
+
+const _PDF_STYLE = `
+  <style>
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { font-family:'Segoe UI',Arial,sans-serif; font-size:9pt; color:#1e293b;
+           background:#fff; line-height:1.5; }
+    .pdf-page { padding: 18mm 16mm 14mm; }
+    /* Header */
+    .pdf-header { display:flex; justify-content:space-between; align-items:flex-start;
+      border-bottom:3px solid #0f2744; padding-bottom:10px; margin-bottom:14px; }
+    .pdf-logo { font-size:18pt; font-weight:800; color:#0f2744; }
+    .pdf-logo span { color:#00b4d8; }
+    .pdf-meta { text-align:right; font-size:8pt; color:#64748b; }
+    .pdf-subtitle { font-size:9pt; color:#64748b; margin-top:2px; }
+    /* Cover info */
+    .pdf-cover-box { background:#f0f4f8; border-left:4px solid #0f2744;
+      padding:8px 12px; margin-bottom:14px; border-radius:0 6px 6px 0; }
+    .pdf-cover-title { font-size:13pt; font-weight:700; color:#0f2744; }
+    .pdf-cover-sub { font-size:8.5pt; color:#475569; margin-top:2px; }
+    /* Section */
+    .pdf-section { margin-bottom:14px; }
+    .pdf-section-title { font-size:9pt; font-weight:700; text-transform:uppercase;
+      letter-spacing:.5px; color:#0f2744; border-bottom:1.5px solid #e2e8f0;
+      padding-bottom:4px; margin-bottom:8px; }
+    /* KPI Grid */
+    .pdf-kpi-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:6px; }
+    .pdf-kpi { border-radius:6px; padding:8px 10px; text-align:center; color:#fff; }
+    .pdf-kpi-val { font-size:16pt; font-weight:800; line-height:1; }
+    .pdf-kpi-lbl { font-size:7pt; margin-top:2px; opacity:.9; }
+    .kpi-stations { background:#1d6fa4; }
+    .kpi-critical  { background:#e74c3c; }
+    .kpi-warning   { background:#f39c12; }
+    .kpi-good      { background:#0ead69; }
+    .kpi-nostatus  { background:#6c757d; }
+    /* Urgency badge */
+    .urg-TINDAK  { background:#fde8e8; color:#c0392b; border:1px solid #e74c3c;
+      padding:2px 8px; border-radius:12px; font-weight:700; font-size:8pt; }
+    .urg-WASPADA { background:#fff8e1; color:#b7770a; border:1px solid #f4a261;
+      padding:2px 8px; border-radius:12px; font-weight:700; font-size:8pt; }
+    .urg-PANTAU  { background:#e6f9ef; color:#0a7a3e; border:1px solid #0ead69;
+      padding:2px 8px; border-radius:12px; font-weight:700; font-size:8pt; }
+    /* Station card */
+    .pdf-station { border:1px solid #e2e8f0; border-radius:6px;
+      margin-bottom:10px; overflow:hidden; }
+    .pdf-station-header { background:#0f2744; color:#fff; padding:6px 10px;
+      display:flex; justify-content:space-between; align-items:center; }
+    .pdf-station-id { font-size:10pt; font-weight:700; }
+    .pdf-station-name { font-size:8pt; opacity:.8; }
+    .pdf-station-body { padding:8px 10px; }
+    /* Steps */
+    .pdf-step { margin-bottom:6px; padding:5px 8px;
+      background:#f8fafc; border-left:3px solid #0f2744; border-radius:0 4px 4px 0; }
+    .pdf-step-head { font-size:8pt; font-weight:700; color:#0f2744; margin-bottom:2px; }
+    .pdf-step-body { font-size:8pt; color:#334155; white-space:pre-wrap; word-break:break-word; }
+    /* Recommendations */
+    .pdf-action { padding:5px 8px; border-left:3px solid #e74c3c;
+      background:#fff8f8; margin-bottom:5px; border-radius:0 4px 4px 0; }
+    .pdf-action-num { font-weight:800; color:#c0392b; margin-right:4px; }
+    .pdf-action-text { font-size:8.5pt; color:#1e293b; }
+    .pdf-action-sub { font-size:7.5pt; color:#64748b; margin-top:1px; }
+    /* Table */
+    .pdf-table { width:100%; border-collapse:collapse; font-size:7.5pt; }
+    .pdf-table th { background:#0f2744; color:#fff; padding:5px 6px;
+      text-align:left; font-weight:600; font-size:7pt; }
+    .pdf-table td { padding:4px 6px; border-bottom:1px solid #f1f5f9; }
+    .pdf-table tr:nth-child(even) td { background:#f8fafc; }
+    /* Reliability */
+    .pdf-warn-box { background:#fff8e1; border:1px solid #fcd34d;
+      padding:6px 10px; border-radius:6px; font-size:8pt; color:#7d4e00;
+      margin-bottom:10px; }
+    /* Footer */
+    .pdf-footer { border-top:1px solid #e2e8f0; margin-top:12px; padding-top:6px;
+      display:flex; justify-content:space-between; font-size:7pt; color:#94a3b8; }
+    /* Avoid page break inside station card */
+    .pdf-station { page-break-inside: avoid; }
+  </style>`;
+
+function _pdfHeader(title, subtitle) {
+  const now = new Date().toLocaleString('id-ID');
+  return `
+    <div class="pdf-header">
+      <div>
+        <div class="pdf-logo">WQS<span>A</span></div>
+        <div class="pdf-subtitle">Water Quality Status Agent — DAS Citarum</div>
+      </div>
+      <div class="pdf-meta">
+        <div style="font-weight:700;font-size:9pt;color:#1e293b">${title}</div>
+        <div>${subtitle||''}</div>
+        <div style="margin-top:3px">Dicetak: ${now}</div>
+      </div>
+    </div>`;
+}
+
+function _pdfFooter(sessionId) {
+  return `
+    <div class="pdf-footer">
+      <span>WQSA Dashboard — Sistem Pemantauan Kualitas Air DAS Citarum</span>
+      <span>${sessionId ? 'Session: '+sessionId : ''}</span>
+    </div>`;
+}
+
+// ── Ekspor Laporan Analisis ────────────────────────────────────────────
+async function exportAnalysisPDF() {
+  if (!_currentJobId) { alert('Tidak ada hasil analisis aktif.'); return; }
+
+  const btn = document.querySelector('[onclick="exportAnalysisPDF()"]');
+  if (btn) { btn.disabled=true; btn.innerHTML='<span class="spinner-border spinner-border-sm me-1"></span>Membuat PDF…'; }
+
+  try {
+    const r = await fetch('/api/analyze/' + _currentJobId);
+    const job = await r.json();
+    const result = job.result || {};
+    const hl  = result.analysis_highlight || {};
+    const dr  = result.detail_reasoning  || {};
+    const rel = result.data_reliability  || {};
+    const dq  = result.data_quality      || {};
+    const ika = result.ika_summary       || {};
+    const summary = document.getElementById('kpi-stations')?.textContent || '–';
+
+    const fromCache = result._from_cache ? ' (dari cache)' : '';
+    const ts = (result.timestamp||'').replace('T',' ').slice(0,19);
+
+    let html = `<!DOCTYPE html><html><head><meta charset="UTF-8">${_PDF_STYLE}</head>
+    <body><div class="pdf-page">`;
+
+    // Header
+    html += _pdfHeader('Laporan Analisis Kualitas Air', `Tanggal analisis: ${ts}${fromCache}`);
+
+    // Cover
+    const urg = hl.overall_urgency || '–';
+    html += `<div class="pdf-cover-box">
+      <div class="pdf-cover-title">Laporan Pemantauan Kualitas Air — DAS Citarum, Kab. Bandung</div>
+      <div class="pdf-cover-sub">
+        Status Keseluruhan: <span class="urg-${urg}">${urg}</span> &nbsp;|&nbsp;
+        ${hl.total_anomalous||0} stasiun anomali &nbsp;|&nbsp;
+        ${hl.total_normal||0} stasiun normal
+        ${ika.actual!=null ? ` &nbsp;|&nbsp; IKA: ${fmt(ika.actual,2)} / Target ${fmt(ika.target,2)} (Gap: ${fmt(ika.gap,2)})` : ''}
+      </div>
+    </div>`;
+
+    // Reliability warning
+    if (rel.level && rel.level !== 'OK') {
+      html += `<div class="pdf-warn-box">⚠️ ${rel.warning||'Data reliability issue'}</div>`;
+    }
+
+    // KPI Summary
+    html += `<div class="pdf-section">
+      <div class="pdf-section-title">Ringkasan Status Stasiun</div>
+      <div class="pdf-kpi-grid">
+        <div class="pdf-kpi kpi-stations"><div class="pdf-kpi-val">${document.getElementById('kpi-stations')?.textContent||'–'}</div><div class="pdf-kpi-lbl">Stasiun Aktif</div></div>
+        <div class="pdf-kpi kpi-critical"><div class="pdf-kpi-val">${document.getElementById('kpi-critical')?.textContent||'–'}</div><div class="pdf-kpi-lbl">Cemar Berat</div></div>
+        <div class="pdf-kpi kpi-warning"><div class="pdf-kpi-val">${document.getElementById('kpi-warning')?.textContent||'–'}</div><div class="pdf-kpi-lbl">Cemar Sedang/Ringan</div></div>
+        <div class="pdf-kpi kpi-good"><div class="pdf-kpi-val">${document.getElementById('kpi-good')?.textContent||'–'}</div><div class="pdf-kpi-lbl">Memenuhi BM</div></div>
+        <div class="pdf-kpi kpi-nostatus"><div class="pdf-kpi-val">${document.getElementById('kpi-nostatus')?.textContent||'–'}</div><div class="pdf-kpi-lbl">Tidak Diketahui</div></div>
+      </div>
+    </div>`;
+
+    // Data Quality
+    if (dq.overall_score != null) {
+      html += `<div class="pdf-section">
+        <div class="pdf-section-title">Kualitas Data</div>
+        <table class="pdf-table">
+          <tr><th>Score</th><th>Issues</th><th>Outlier</th><th>Excluded Stations</th></tr>
+          <tr>
+            <td><b>${dq.overall_score}/100</b></td>
+            <td>${dq.issues_found||0}</td>
+            <td>${(dq.outliers||[]).length}</td>
+            <td>${(dq.excluded_stations||[]).join(', ')||'–'}</td>
+          </tr>
+        </table>
+      </div>`;
+    }
+
+    // Per-station analysis
+    const perStation = dr.per_station || [];
+    if (perStation.length > 0) {
+      html += `<div class="pdf-section"><div class="pdf-section-title">Analisis Detail Per Stasiun</div>`;
+      perStation.forEach(st => {
+        const topSt = (hl.top_stations||[]).find(s=>s.station_id===st.station_id) || {};
+        const urgSt = topSt.urgency || 'PANTAU';
+        html += `<div class="pdf-station">
+          <div class="pdf-station-header">
+            <div>
+              <span class="pdf-station-id">${st.station_id}</span>
+              <span style="margin-left:8px">—</span>
+              <span style="margin-left:8px">${st.station_name||''}</span>
+            </div>
+            <span class="urg-${urgSt}">${urgSt}</span>
+          </div>
+          <div class="pdf-station-body">`;
+        if (topSt.key_finding) {
+          html += `<div style="font-size:8.5pt;color:#334155;margin-bottom:6px;font-style:italic">"${topSt.key_finding}"</div>`;
+        }
+        // Steps
+        (st.steps||[]).forEach(step => {
+          const colors = {1:'#6366f1',2:'#16a34a',3:'#0ea5e9',4:'#dc2626',5:'#ea580c'};
+          const c = colors[step.step] || '#0f2744';
+          html += `<div class="pdf-step" style="border-left-color:${c}">
+            <div class="pdf-step-head" style="color:${c}">Step ${step.step} — ${step.name}</div>
+            <div class="pdf-step-body">${(step.result||'–').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+          </div>`;
+        });
+        // Causal chain
+        if ((st.causal_chain||[]).length > 0) {
+          html += `<div style="margin-top:6px;font-size:7.5pt;font-weight:700;color:#0f2744">Bukti Kausal:</div>
+            <ul style="margin:3px 0;padding-left:14px;font-size:7.5pt;color:#334155">`;
+          st.causal_chain.forEach(c => {
+            html += `<li>${c.company_name||'?'} — confidence: <b>${c.causal_confidence||'–'}</b>, jarak: ${c.distance_km||'–'} km, params: ${(c.violated_params||[]).join(', ')||'–'}</li>`;
+          });
+          html += `</ul>`;
+        }
+        html += `</div></div>`;
+      });
+      html += `</div>`;
+    }
+
+    // Priority actions
+    const actions = (hl.priority_actions||[]);
+    if (actions.length > 0) {
+      html += `<div class="pdf-section">
+        <div class="pdf-section-title">Rekomendasi Prioritas</div>`;
+      actions.forEach(a => {
+        html += `<div class="pdf-action">
+          <span class="pdf-action-num">#${a.priority}</span>
+          <span class="pdf-action-text">${a.action||'–'}</span>
+          <div class="pdf-action-sub">Target: ${a.target||'–'} &nbsp;·&nbsp; Deadline: ${a.deadline||'–'}</div>
+        </div>`;
+      });
+      html += `</div>`;
+    }
+
+    // Feedback loops note
+    if (result.feedback_loops > 0) {
+      html += `<div class="pdf-section">
+        <div style="font-size:8pt;color:#64748b;background:#f8fafc;padding:6px 10px;border-radius:6px">
+          ℹ️ Laporan ini divalidasi melalui ${result.feedback_loops} iterasi feedback loop antara DataAnalyst dan ReportEvaluator.
+          ${(result.unresolved_issues||[]).length > 0 ? `<br>Isu belum terselesaikan: ${result.unresolved_issues.join('; ')}` : ''}
+        </div>
+      </div>`;
+    }
+
+    html += _pdfFooter(result.session_id);
+    html += `</div></body></html>`;
+
+    const filename = `WQSA_Analisis_${new Date().toISOString().slice(0,10)}.pdf`;
+    await html2pdf().set({
+      margin:       0,
+      filename:     filename,
+      image:        { type:'jpeg', quality:0.95 },
+      html2canvas:  { scale:2, useCORS:true, letterRendering:true },
+      jsPDF:        { unit:'mm', format:'a4', orientation:'portrait' },
+      pagebreak:    { mode:['avoid-all','css'] },
+    }).from(html).save();
+
+  } catch(e) {
+    alert('Gagal ekspor PDF: ' + e.message);
+    console.error(e);
+  } finally {
+    if (btn) { btn.disabled=false; btn.innerHTML='<i class="bi bi-file-earmark-pdf me-1"></i>Ekspor PDF'; }
+  }
+}
+
+// ── Ekspor Tabel Stasiun ──────────────────────────────────────────────
+async function exportStationsPDF() {
+  const btn = document.querySelector('[onclick="exportStationsPDF()"]');
+  if (btn) { btn.disabled=true; btn.innerHTML='<span class="spinner-border spinner-border-sm me-1"></span>'; }
+
+  try {
+    const r = await fetch('/api/onlimo');
+    const rows = await r.json();
+    if (!rows || rows.error) throw new Error(rows?.error || 'Gagal load data');
+
+    const now = new Date().toLocaleString('id-ID');
+    let html = `<!DOCTYPE html><html><head><meta charset="UTF-8">${_PDF_STYLE}
+      <style>.pdf-table { font-size:7pt; } .pdf-table th,.pdf-table td { padding:3px 5px; }</style>
+    </head><body><div class="pdf-page">`;
+
+    html += _pdfHeader('Data Stasiun Onlimo KLHK', `Total: ${rows.length} stasiun`);
+
+    html += `<div class="pdf-cover-box">
+      <div class="pdf-cover-title">Rekapitulasi Data Pemantauan Kualitas Air</div>
+      <div class="pdf-cover-sub">Sumber: Onlimo KLHK — DAS Citarum, Kab. Bandung &nbsp;|&nbsp; Dicetak: ${now}</div>
+    </div>`;
+
+    // Summary per status
+    const statusCount = {};
+    rows.forEach(s => { const st=s.status||'TIDAK DIKETAHUI'; statusCount[st]=(statusCount[st]||0)+1; });
+    html += `<div class="pdf-section">
+      <div class="pdf-section-title">Distribusi Status</div>
+      <table class="pdf-table"><thead><tr><th>Status</th><th>Jumlah Stasiun</th><th>%</th></tr></thead><tbody>`;
+    Object.entries(statusCount).sort((a,b)=>b[1]-a[1]).forEach(([st,n])=>{
+      html += `<tr><td>${st}</td><td><b>${n}</b></td><td>${((n/rows.length)*100).toFixed(1)}%</td></tr>`;
+    });
+    html += `</tbody></table></div>`;
+
+    // Main table
+    html += `<div class="pdf-section">
+      <div class="pdf-section-title">Detail Data Stasiun (${rows.length} stasiun)</div>
+      <table class="pdf-table">
+        <thead><tr>
+          <th>ID</th><th>Nama Stasiun</th><th>Status</th><th>Indeks</th>
+          <th>COD</th><th>BOD</th><th>DO</th><th>pH</th><th>TSS</th>
+          <th>Kabupaten</th>
+        </tr></thead>
+        <tbody>`;
+    rows.forEach(s => {
+      const c = s.status==='CEMAR BERAT'?'#e74c3c':s.status==='CEMAR SEDANG'?'#f39c12':
+                s.status==='MEMENUHI BAKUMUTU'?'#0ead69':'#6c757d';
+      const fv = (v) => v > 0 ? v.toFixed(1) : '–';
+      html += `<tr>
+        <td><b>${s.station_id}</b></td>
+        <td>${s.station_name||'–'}</td>
+        <td style="color:${c};font-weight:700;font-size:6.5pt">${s.status||'–'}</td>
+        <td style="text-align:right"><b>${s.indeks_mutu>0?s.indeks_mutu.toFixed(2):'–'}</b></td>
+        <td style="text-align:right">${fv(s.cod)}</td>
+        <td style="text-align:right">${fv(s.bod)}</td>
+        <td style="text-align:right">${fv(s.do)}</td>
+        <td style="text-align:right">${fv(s.ph)}</td>
+        <td style="text-align:right">${fv(s.tss)}</td>
+        <td>${s.kabkot||'–'}</td>
+      </tr>`;
+    });
+    html += `</tbody></table></div>`;
+
+    html += _pdfFooter('');
+    html += `</div></body></html>`;
+
+    const filename = `WQSA_Stasiun_${new Date().toISOString().slice(0,10)}.pdf`;
+    await html2pdf().set({
+      margin:       0,
+      filename:     filename,
+      image:        { type:'jpeg', quality:0.95 },
+      html2canvas:  { scale:2, useCORS:true },
+      jsPDF:        { unit:'mm', format:'a4', orientation:'landscape' },
+      pagebreak:    { mode:'css', before:'.page-break' },
+    }).from(html).save();
+
+  } catch(e) {
+    alert('Gagal ekspor PDF: ' + e.message);
+    console.error(e);
+  } finally {
+    if (btn) { btn.disabled=false; btn.innerHTML='<i class="bi bi-file-earmark-pdf me-1"></i>PDF'; }
+  }
 }
 
 // ── Init ──────────────────────────────────────────────────────────────

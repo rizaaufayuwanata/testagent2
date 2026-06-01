@@ -820,12 +820,19 @@ def _build_narrative_from_thinks(
     """
     if think_notes:
         parts = []
-        for i, note in enumerate(think_notes, 1):
+        for note in think_notes:
             thought = note["thought"].strip()
-            # Hapus tag <thinking> jika ada
             thought = thought.replace("<thinking>", "").replace("</thinking>", "").strip()
-            if thought:
-                parts.append(thought)
+            if not thought:
+                continue
+            lines = [l for l in thought.splitlines() if l.strip()]
+            # Skip jika hanya 1 baris pendek (heading saja, tanpa body)
+            if len(lines) <= 1 and len(thought) < 80:
+                continue
+            # Skip jika semua baris adalah judul/header pendek
+            if all(len(l.strip()) < 60 and l.strip().endswith(':') for l in lines if l.strip()):
+                continue
+            parts.append(thought)
 
         if parts:
             return "\n\n---\n\n".join(parts)
