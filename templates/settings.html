@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WQSA — Konfigurasi Threshold</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --navy:#0f2744; --blue:#1d6fa4; --green:#0ead69;
+  --yellow:#f4a261; --red:#e63946; --border:#e2e8f0;
+  --gray-bg:#f0f4f8; --text:#1e293b; --text-muted:#64748b;
+  --radius:12px; --shadow:0 2px 8px rgba(0,0,0,.08);
+}
+body { font-family:'Inter',system-ui,sans-serif; background:var(--gray-bg);
+  color:var(--text); font-size:.875rem; }
+#navbar { background:linear-gradient(135deg,var(--navy),#1a3a5c);
+  padding:.7rem 1.5rem; box-shadow:0 2px 10px rgba(0,0,0,.25); }
+.brand { font-size:1.1rem; font-weight:700; color:#fff; }
+.brand span { color:#00b4d8; }
+.btn-nav { background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.25);
+  color:#fff; border-radius:8px; font-size:.78rem; padding:5px 14px; }
+.btn-nav:hover { background:rgba(255,255,255,.2); color:#fff; }
+.page-wrap { max-width:960px; margin:0 auto; padding:1.5rem; }
+/* Group cards */
+.setting-group { background:#fff; border-radius:var(--radius);
+  box-shadow:var(--shadow); border:1px solid var(--border);
+  margin-bottom:1.25rem; overflow:hidden; }
+.group-header { padding:.85rem 1.2rem; background:var(--navy); color:#fff;
+  display:flex; align-items:center; gap:.6rem; }
+.group-header i { font-size:1.1rem; }
+.group-title { font-weight:700; font-size:.85rem; text-transform:uppercase;
+  letter-spacing:.5px; }
+.group-body { padding:1.1rem 1.2rem; }
+/* Setting row */
+.setting-row { margin-bottom:1.1rem; padding-bottom:1.1rem;
+  border-bottom:1px solid var(--border); }
+.setting-row:last-child { margin-bottom:0; padding-bottom:0; border-bottom:none; }
+.setting-label { font-weight:600; font-size:.82rem; color:var(--text); }
+.setting-desc { font-size:.75rem; color:var(--text-muted); margin-top:2px; margin-bottom:.5rem; }
+/* Slider */
+.threshold-slider { width:100%; accent-color:var(--blue); cursor:pointer; height:4px; }
+.slider-row { display:flex; align-items:center; gap:.75rem; }
+.slider-val { min-width:64px; text-align:center; }
+.val-input { width:80px; text-align:center; border:1.5px solid var(--border);
+  border-radius:8px; padding:4px 8px; font-size:.82rem; font-weight:700;
+  color:var(--navy); transition:border-color .15s; }
+.val-input:focus { outline:none; border-color:var(--blue);
+  box-shadow:0 0 0 3px rgba(29,111,164,.15); }
+.val-unit { font-size:.75rem; color:var(--text-muted); }
+/* Visual bar */
+.threshold-visual { height:8px; border-radius:4px; background:#e2e8f0;
+  margin-top:.4rem; position:relative; overflow:hidden; }
+.threshold-fill { height:100%; border-radius:4px; transition:width .3s;
+  background:linear-gradient(90deg,var(--green),var(--yellow),var(--red)); }
+/* Status badges */
+.threshold-badges { display:flex; gap:.4rem; margin-top:.4rem; flex-wrap:wrap; }
+.tbadge { font-size:.68rem; padding:2px 8px; border-radius:10px; font-weight:600; }
+/* Select model */
+.model-select { border:1.5px solid var(--border); border-radius:8px;
+  padding:5px 10px; font-size:.82rem; width:100%; max-width:380px; }
+.model-select:focus { outline:none; border-color:var(--blue);
+  box-shadow:0 0 0 3px rgba(29,111,164,.15); }
+/* Save button */
+.btn-save { background:linear-gradient(135deg,var(--navy),var(--blue));
+  color:#fff; border:none; border-radius:10px; padding:10px 28px;
+  font-weight:700; font-size:.9rem; transition:opacity .2s; }
+.btn-save:hover { opacity:.9; color:#fff; }
+.btn-save:disabled { opacity:.55; }
+/* Toast */
+.toast-wrap { position:fixed; top:20px; right:20px; z-index:9999; }
+/* Changed indicator */
+.changed-dot { width:7px; height:7px; border-radius:50%; background:var(--yellow);
+  display:inline-block; margin-left:5px; animation:pulse-dot 1s infinite; }
+@keyframes pulse-dot { 0%,100%{opacity:1}50%{opacity:.4} }
+/* Preset buttons */
+.preset-btn { font-size:.72rem; padding:2px 10px; border-radius:10px;
+  border:1.5px solid var(--border); background:#fff; cursor:pointer;
+  transition:all .15s; }
+.preset-btn:hover { border-color:var(--blue); color:var(--blue); }
+</style>
+</head>
+<body>
+
+<nav class="navbar navbar-dark" id="navbar">
+  <div class="d-flex align-items-center gap-3">
+    <div class="brand">WQS<span>A</span></div>
+    <span style="color:rgba(255,255,255,.5);font-size:.75rem">|</span>
+    <span style="color:rgba(255,255,255,.8);font-size:.82rem;font-weight:600">
+      <i class="bi bi-sliders me-1"></i>Konfigurasi Threshold
+    </span>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="/admin/etl" class="btn btn-nav btn-sm">
+      <i class="bi bi-cloud-download me-1"></i>Admin ETL
+    </a>
+    <a href="/" class="btn btn-nav btn-sm">
+      <i class="bi bi-speedometer2 me-1"></i>Dashboard
+    </a>
+  </div>
+</nav>
+
+<div class="page-wrap">
+
+  <!-- Alert unsaved -->
+  <div id="unsaved-alert" class="alert d-flex gap-2 align-items-center d-none mb-3"
+    style="background:#fff8e1;border:1px solid #fcd34d;border-radius:10px">
+    <i class="bi bi-exclamation-triangle-fill text-warning"></i>
+    <span>Ada perubahan yang belum disimpan. Klik <b>Simpan Konfigurasi</b> untuk menyimpan.</span>
+  </div>
+
+  <!-- ═══ 1. THRESHOLD DETEKSI ANOMALI ═══ -->
+  <div class="setting-group">
+    <div class="group-header">
+      <i class="bi bi-exclamation-triangle-fill"></i>
+      <span class="group-title">Threshold Deteksi Anomali</span>
+    </div>
+    <div class="group-body">
+
+      <div class="setting-row">
+        <div class="setting-label">Indeks Mutu Air — Batas Anomali</div>
+        <div class="setting-desc">
+          Stasiun dengan indeks ≥ nilai ini diklasifikasikan sebagai anomali dan masuk ke pipeline analisis.
+          Nilai standar PP 22/2021: <b>3.0</b>
+        </div>
+        <div class="slider-row">
+          <input type="range" class="threshold-slider" id="sl-anomaly_index" min="1" max="7" step="0.1"
+            oninput="syncSlider('anomaly_index_threshold', this.value)">
+          <div class="slider-val">
+            <input type="number" class="val-input" id="inp-anomaly_index_threshold"
+              min="1" max="7" step="0.1"
+              oninput="syncInput('anomaly_index_threshold', this.value)">
+            <div class="val-unit">indeks</div>
+          </div>
+        </div>
+        <div class="threshold-badges mt-2">
+          <span class="tbadge" style="background:#e6f9ef;color:#0a7a3e">< nilai ini = NORMAL</span>
+          <span class="tbadge" style="background:#fff8e1;color:#b7770a">≥ nilai ini = ANOMALI → analisis lanjut</span>
+        </div>
+        <div class="mt-2 d-flex gap-1">
+          <span class="preset-btn" onclick="setVal('anomaly_index_threshold',2.5)">2.5 (ketat)</span>
+          <span class="preset-btn" onclick="setVal('anomaly_index_threshold',3.0)">3.0 (standar)</span>
+          <span class="preset-btn" onclick="setVal('anomaly_index_threshold',4.0)">4.0 (longgar)</span>
+        </div>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-label">Perubahan Indeks Historis — Batas Anomali (%)</div>
+        <div class="setting-desc">
+          Jika indeks berubah lebih dari nilai ini (%) dibanding rata-rata 30 hari, dianggap anomali.
+        </div>
+        <div class="slider-row">
+          <input type="range" class="threshold-slider" id="sl-anomaly_change" min="5" max="60" step="1"
+            oninput="syncSlider('anomaly_change_percent', this.value)">
+          <div class="slider-val">
+            <input type="number" class="val-input" id="inp-anomaly_change_percent"
+              min="5" max="60" step="1"
+              oninput="syncInput('anomaly_change_percent', this.value)">
+            <div class="val-unit">%</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ═══ 2. THRESHOLD PROFIL PENCEMAR ═══ -->
+  <div class="setting-group">
+    <div class="group-header">
+      <i class="bi bi-droplet-fill"></i>
+      <span class="group-title">Threshold Profil Pencemar (COD/BOD Ratio)</span>
+    </div>
+    <div class="group-body">
+
+      <div class="setting-row">
+        <div class="setting-label">Batas Profil INDUSTRI</div>
+        <div class="setting-desc">
+          COD/BOD ratio &gt; nilai ini → profil pencemar <b>INDUSTRI</b>.
+          Sumber: limbah industri kimia/manufaktur.
+        </div>
+        <div class="slider-row">
+          <input type="range" class="threshold-slider" id="sl-ratio_industry" min="2" max="8" step="0.1"
+            oninput="syncSlider('ratio_industry_threshold', this.value)">
+          <div class="slider-val">
+            <input type="number" class="val-input" id="inp-ratio_industry_threshold"
+              min="2" max="8" step="0.1"
+              oninput="syncInput('ratio_industry_threshold', this.value)">
+            <div class="val-unit">ratio</div>
+          </div>
+        </div>
+        <div class="threshold-badges mt-2">
+          <span class="tbadge" style="background:#fde8e8;color:#c0392b">≥ nilai ini = INDUSTRI</span>
+        </div>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-label">Batas Profil CAMPURAN</div>
+        <div class="setting-desc">
+          COD/BOD ratio antara nilai ini dan batas industri → profil <b>CAMPURAN</b> (industri + domestik).
+        </div>
+        <div class="slider-row">
+          <input type="range" class="threshold-slider" id="sl-ratio_mixed" min="1" max="5" step="0.1"
+            oninput="syncSlider('ratio_mixed_low', this.value)">
+          <div class="slider-val">
+            <input type="number" class="val-input" id="inp-ratio_mixed_low"
+              min="1" max="5" step="0.1"
+              oninput="syncInput('ratio_mixed_low', this.value)">
+            <div class="val-unit">ratio</div>
+          </div>
+        </div>
+        <div class="threshold-badges mt-2">
+          <span class="tbadge" style="background:#fff8e1;color:#b7770a">nilai ini s.d. batas industri = CAMPURAN</span>
+          <span class="tbadge" style="background:#e6f9ef;color:#0a7a3e">&lt; nilai ini = DOMESTIK</span>
+        </div>
+        <!-- Visual ratio zones -->
+        <div class="mt-2 p-2 rounded" style="background:#f8fafc;font-size:.75rem">
+          <div class="d-flex gap-0" style="height:18px;border-radius:6px;overflow:hidden">
+            <div style="flex:1;background:#0ead69;display:flex;align-items:center;justify-content:center;color:#fff;font-size:.65rem;font-weight:700">DOMESTIK</div>
+            <div id="zone-campuran" style="background:#f39c12;display:flex;align-items:center;justify-content:center;color:#fff;font-size:.65rem;font-weight:700">CAMPURAN</div>
+            <div id="zone-industri" style="background:#e74c3c;display:flex;align-items:center;justify-content:center;color:#fff;font-size:.65rem;font-weight:700">INDUSTRI</div>
+          </div>
+          <div id="zone-labels" class="d-flex justify-content-between mt-1" style="color:var(--text-muted)">
+            <span>0</span><span id="lbl-mixed">–</span><span id="lbl-industry">–</span><span>10</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ═══ 3. THRESHOLD CURAH HUJAN ═══ -->
+  <div class="setting-group">
+    <div class="group-header" style="background:#1a6fa8">
+      <i class="bi bi-cloud-rain-fill"></i>
+      <span class="group-title">Threshold Curah Hujan (Step 3 Branching)</span>
+    </div>
+    <div class="group-body">
+
+      <div class="setting-row">
+        <div class="setting-label">Curah Hujan Tinggi — Batas Limpasan (LIMPASAN)</div>
+        <div class="setting-desc">
+          Jika curah hujan 24 jam ≥ nilai ini, anomali diklasifikasikan sebagai <b>LIMPASAN HUJAN</b>
+          dan analisis industri (Step 4) di-skip.
+          Standar BMKG: hujan lebat = 50mm/24h.
+        </div>
+        <div class="slider-row">
+          <input type="range" class="threshold-slider" id="sl-rainfall" min="10" max="150" step="5"
+            oninput="syncSlider('rainfall_high_mm', this.value)">
+          <div class="slider-val">
+            <input type="number" class="val-input" id="inp-rainfall_high_mm"
+              min="10" max="150" step="5"
+              oninput="syncInput('rainfall_high_mm', this.value)">
+            <div class="val-unit">mm/24h</div>
+          </div>
+        </div>
+        <div class="threshold-badges mt-2">
+          <span class="tbadge" style="background:#e8f4fd;color:#1d6fa4">&lt; nilai ini → lanjut investigasi industri</span>
+          <span class="tbadge" style="background:#fde8e8;color:#c0392b">≥ nilai ini → LIMPASAN, skip Step 4</span>
+        </div>
+        <div class="mt-2 d-flex gap-1">
+          <span class="preset-btn" onclick="setVal('rainfall_high_mm',30)">30mm (sensitif)</span>
+          <span class="preset-btn" onclick="setVal('rainfall_high_mm',50)">50mm (standar BMKG)</span>
+          <span class="preset-btn" onclick="setVal('rainfall_high_mm',100)">100mm (sangat lebat)</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ═══ 4. THRESHOLD IKA ═══ -->
+  <div class="setting-group">
+    <div class="group-header" style="background:#0a8a4e">
+      <i class="bi bi-award-fill"></i>
+      <span class="group-title">Threshold Indeks Kualitas Air (IKA) — Step 5</span>
+    </div>
+    <div class="group-body">
+
+      <div class="setting-row">
+        <div class="setting-label">IKA Gap — Batas WASPADA</div>
+        <div class="setting-desc">
+          Jika gap IKA (aktual − target) ≤ nilai ini, urgensi = <b>WASPADA</b>.
+        </div>
+        <div class="slider-row">
+          <input type="range" class="threshold-slider" id="sl-ika_warn" min="-15" max="0" step="0.5"
+            oninput="syncSlider('ika_gap_warning', this.value)">
+          <div class="slider-val">
+            <input type="number" class="val-input" id="inp-ika_gap_warning"
+              min="-15" max="0" step="0.5"
+              oninput="syncInput('ika_gap_warning', this.value)">
+            <div class="val-unit">gap</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-label">IKA Gap — Batas TINDAK (Kritis)</div>
+        <div class="setting-desc">
+          Jika gap IKA ≤ nilai ini, urgensi = <b>TINDAK</b> — tindakan segera diperlukan.
+        </div>
+        <div class="slider-row">
+          <input type="range" class="threshold-slider" id="sl-ika_crit" min="-20" max="-3" step="0.5"
+            oninput="syncSlider('ika_gap_critical', this.value)">
+          <div class="slider-val">
+            <input type="number" class="val-input" id="inp-ika_gap_critical"
+              min="-20" max="-3" step="0.5"
+              oninput="syncInput('ika_gap_critical', this.value)">
+            <div class="val-unit">gap</div>
+          </div>
+        </div>
+        <!-- IKA urgency visual -->
+        <div class="mt-2 p-2 rounded" style="background:#f8fafc;font-size:.75rem">
+          <div class="d-flex gap-0" style="height:18px;border-radius:6px;overflow:hidden">
+            <div id="ika-good-zone" style="background:#0ead69;display:flex;align-items:center;justify-content:center;color:#fff;font-size:.65rem;font-weight:700">PANTAU</div>
+            <div id="ika-warn-zone" style="background:#f39c12;display:flex;align-items:center;justify-content:center;color:#fff;font-size:.65rem;font-weight:700">WASPADA</div>
+            <div id="ika-crit-zone" style="background:#e74c3c;display:flex;align-items:center;justify-content:center;color:#fff;font-size:.65rem;font-weight:700">TINDAK</div>
+          </div>
+          <div class="d-flex justify-content-between mt-1" style="color:var(--text-muted)">
+            <span>0 (sama dengan target)</span>
+            <span id="lbl-ika-warn">–</span>
+            <span id="lbl-ika-crit">–</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ═══ 5. DOMAIN ═══ -->
+  <div class="setting-group">
+    <div class="group-header" style="background:#4a4a8a">
+      <i class="bi bi-geo-alt-fill"></i>
+      <span class="group-title">Konfigurasi Domain</span>
+    </div>
+    <div class="group-body">
+      <div class="row g-3">
+        <div class="col-md-6 setting-row">
+          <div class="setting-label">Target DAS</div>
+          <div class="setting-desc">Nama Daerah Aliran Sungai yang menjadi fokus analisis.</div>
+          <input type="text" class="val-input w-100" id="inp-target_das"
+            style="max-width:280px" oninput="markChanged()">
+        </div>
+        <div class="col-md-6 setting-row">
+          <div class="setting-label">Target Region (Kabupaten/Kota)</div>
+          <div class="setting-desc">Digunakan untuk filter data SITALA dan label di semua output.</div>
+          <input type="text" class="val-input w-100" id="inp-target_region"
+            style="max-width:280px" oninput="markChanged()">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ 6. MODEL AI ═══ -->
+  <div class="setting-group">
+    <div class="group-header" style="background:#6b21a8">
+      <i class="bi bi-cpu-fill"></i>
+      <span class="group-title">Konfigurasi Model AI (OpenRouter)</span>
+    </div>
+    <div class="group-body">
+      <div class="row g-3">
+
+        <div class="col-md-6 setting-row">
+          <div class="setting-label">Agent Model (bot.py)</div>
+          <div class="setting-desc">Model untuk analisis Telegram bot.</div>
+          <select class="model-select" id="inp-agent_model" onchange="markChanged()">
+            <option value="anthropic/claude-haiku-4-5">claude-haiku-4-5 (cepat, hemat)</option>
+            <option value="anthropic/claude-sonnet-4-5">claude-sonnet-4-5 (seimbang)</option>
+            <option value="anthropic/claude-sonnet-4-6">claude-sonnet-4-6 (terbaru)</option>
+            <option value="openai/gpt-4o-mini">gpt-4o-mini (alternatif)</option>
+          </select>
+        </div>
+
+        <div class="col-md-6 setting-row">
+          <div class="setting-label">Evaluator Model (Phase 2)</div>
+          <div class="setting-desc">DataEvaluatorAgent — validasi & cleaning data.</div>
+          <select class="model-select" id="inp-evaluator_model" onchange="markChanged()">
+            <option value="anthropic/claude-haiku-4-5">claude-haiku-4-5</option>
+            <option value="anthropic/claude-sonnet-4-5">claude-sonnet-4-5</option>
+            <option value="anthropic/claude-sonnet-4-6">claude-sonnet-4-6</option>
+            <option value="openai/gpt-4o-mini">gpt-4o-mini</option>
+          </select>
+        </div>
+
+        <div class="col-md-6 setting-row">
+          <div class="setting-label">Analyst Model (Phase 3)</div>
+          <div class="setting-desc">DataAnalystAgent — reasoning chain 5 langkah.</div>
+          <select class="model-select" id="inp-analyst_model" onchange="markChanged()">
+            <option value="anthropic/claude-haiku-4-5">claude-haiku-4-5</option>
+            <option value="anthropic/claude-sonnet-4-5">claude-sonnet-4-5</option>
+            <option value="anthropic/claude-sonnet-4-6">claude-sonnet-4-6 (direkomendasikan)</option>
+            <option value="openai/gpt-4o-mini">gpt-4o-mini</option>
+          </select>
+        </div>
+
+        <div class="col-md-6 setting-row">
+          <div class="setting-label">Reporter Model (Phase 4)</div>
+          <div class="setting-desc">ReportEvaluatorAgent — validasi & format laporan.</div>
+          <select class="model-select" id="inp-reporter_model" onchange="markChanged()">
+            <option value="anthropic/claude-haiku-4-5">claude-haiku-4-5</option>
+            <option value="anthropic/claude-sonnet-4-5">claude-sonnet-4-5</option>
+            <option value="anthropic/claude-sonnet-4-6">claude-sonnet-4-6</option>
+            <option value="openai/gpt-4o-mini">gpt-4o-mini</option>
+          </select>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Save Bar -->
+  <div class="d-flex justify-content-between align-items-center p-3 rounded"
+    style="background:#fff;border:1px solid var(--border);box-shadow:var(--shadow)">
+    <div>
+      <div style="font-weight:700;font-size:.85rem">Simpan Konfigurasi</div>
+      <div style="font-size:.75rem;color:var(--text-muted)">
+        Perubahan berlaku langsung. Disimpan ke <code>wqsa.env</code>.
+      </div>
+    </div>
+    <div class="d-flex gap-2 align-items-center">
+      <button class="btn btn-outline-secondary btn-sm" onclick="loadSettings()">
+        <i class="bi bi-arrow-clockwise me-1"></i>Reset
+      </button>
+      <button class="btn-save btn" id="btn-save" onclick="saveSettings()">
+        <i class="bi bi-floppy-fill me-1"></i>Simpan Konfigurasi
+      </button>
+    </div>
+  </div>
+
+</div>
+
+<!-- Toast -->
+<div class="toast-wrap">
+  <div id="toast-msg" class="toast align-items-center text-white border-0"
+    style="min-width:260px" role="alert">
+    <div class="d-flex">
+      <div class="toast-body fw-bold" id="toast-text"></div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto"
+        data-bs-dismiss="toast"></button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+let _cfg = {};
+let _hasChanges = false;
+
+// ── Slider / Input sync ────────────────────────────────────────────────
+function syncSlider(key, val) {
+  const input = document.getElementById('inp-' + key);
+  if (input) { input.value = val; }
+  _cfg[key] = parseFloat(val);
+  markChanged();
+  updateVisuals();
+}
+
+function syncInput(key, val) {
+  const sl = document.getElementById('sl-' + key.replace('_threshold','').replace('_percent','').replace('_mm','').replace('_warning','_warn').replace('_critical','_crit').replace('anomaly_index','anomaly_index').replace('anomaly_change','anomaly_change').replace('rainfall_high','rainfall').replace('ika_gap','ika_').replace('ratio_industry','ratio_industry').replace('ratio_mixed_low','ratio_mixed'));
+  // simpler: just update cfg
+  _cfg[key] = isNaN(parseFloat(val)) ? val : parseFloat(val);
+  markChanged();
+  updateVisuals();
+  // sync slider by key
+  const slMap = {
+    'anomaly_index_threshold':'sl-anomaly_index',
+    'anomaly_change_percent':'sl-anomaly_change',
+    'ratio_industry_threshold':'sl-ratio_industry',
+    'ratio_mixed_low':'sl-ratio_mixed',
+    'rainfall_high_mm':'sl-rainfall',
+    'ika_gap_warning':'sl-ika_warn',
+    'ika_gap_critical':'sl-ika_crit',
+  };
+  if(slMap[key]) {
+    const sl2 = document.getElementById(slMap[key]);
+    if(sl2) sl2.value = val;
+  }
+}
+
+function setVal(key, val) {
+  _cfg[key] = val;
+  const inp = document.getElementById('inp-' + key);
+  if (inp) inp.value = val;
+  const slMap = {
+    'anomaly_index_threshold':'sl-anomaly_index',
+    'anomaly_change_percent':'sl-anomaly_change',
+    'ratio_industry_threshold':'sl-ratio_industry',
+    'ratio_mixed_low':'sl-ratio_mixed',
+    'rainfall_high_mm':'sl-rainfall',
+    'ika_gap_warning':'sl-ika_warn',
+    'ika_gap_critical':'sl-ika_crit',
+  };
+  if(slMap[key]) {
+    const sl = document.getElementById(slMap[key]);
+    if(sl) sl.value = val;
+  }
+  markChanged();
+  updateVisuals();
+}
+
+function markChanged() {
+  _hasChanges = true;
+  document.getElementById('unsaved-alert').classList.remove('d-none');
+}
+
+function updateVisuals() {
+  // COD/BOD zone bar
+  const mixed = parseFloat(_cfg.ratio_mixed_low) || 2;
+  const ind   = parseFloat(_cfg.ratio_industry_threshold) || 4;
+  const max   = 10;
+  const domW  = (mixed/max*100).toFixed(1);
+  const camW  = ((ind-mixed)/max*100).toFixed(1);
+  const indW  = ((max-ind)/max*100).toFixed(1);
+  const zc = document.getElementById('zone-campuran');
+  const zi = document.getElementById('zone-industri');
+  if(zc) zc.style.flex = camW;
+  if(zi) zi.style.flex = indW;
+  const lm = document.getElementById('lbl-mixed');
+  const li = document.getElementById('lbl-industry');
+  if(lm) lm.textContent = mixed.toFixed(1);
+  if(li) li.textContent = ind.toFixed(1);
+
+  // IKA urgency zone bar
+  const warn = parseFloat(_cfg.ika_gap_warning) || -3;
+  const crit = parseFloat(_cfg.ika_gap_critical) || -7;
+  const ikaMin = -20, ikaMax = 0, ikaRange = ikaMax - ikaMin;
+  const goodW = ((ikaMax - Math.abs(warn))/ikaRange*100).toFixed(1);
+  const warnW = ((Math.abs(warn) - Math.abs(crit))/ikaRange*100).toFixed(1);
+  const critW = ((Math.abs(crit) - Math.abs(ikaMin))/ikaRange*100).toFixed(1);
+  const ig = document.getElementById('ika-good-zone');
+  const iw = document.getElementById('ika-warn-zone');
+  const ic = document.getElementById('ika-crit-zone');
+  if(ig) ig.style.flex = Math.max(1,goodW);
+  if(iw) iw.style.flex = Math.max(1,warnW);
+  if(ic) ic.style.flex = Math.max(1,critW);
+  const lw = document.getElementById('lbl-ika-warn');
+  const lc = document.getElementById('lbl-ika-crit');
+  if(lw) lw.textContent = warn.toFixed(1);
+  if(lc) lc.textContent = crit.toFixed(1);
+}
+
+// ── Load settings ─────────────────────────────────────────────────────
+async function loadSettings() {
+  try {
+    const r = await fetch('/api/admin/settings');
+    _cfg = await r.json();
+
+    // Populate numeric sliders + inputs
+    const numFields = {
+      'anomaly_index_threshold':  'sl-anomaly_index',
+      'anomaly_change_percent':   'sl-anomaly_change',
+      'ratio_industry_threshold': 'sl-ratio_industry',
+      'ratio_mixed_low':          'sl-ratio_mixed',
+      'rainfall_high_mm':         'sl-rainfall',
+      'ika_gap_warning':          'sl-ika_warn',
+      'ika_gap_critical':         'sl-ika_crit',
+    };
+    Object.entries(numFields).forEach(([key, slId]) => {
+      const val = _cfg[key];
+      const inp = document.getElementById('inp-' + key);
+      const sl  = document.getElementById(slId);
+      if (inp) inp.value = val;
+      if (sl)  sl.value  = val;
+    });
+
+    // Text fields
+    ['target_das','target_region'].forEach(k => {
+      const el = document.getElementById('inp-' + k);
+      if (el) el.value = _cfg[k] || '';
+    });
+
+    // Model selects
+    ['agent_model','evaluator_model','analyst_model','reporter_model'].forEach(k => {
+      const el = document.getElementById('inp-' + k);
+      if (el) {
+        el.value = _cfg[k] || '';
+        // Jika tidak ada option yang cocok, tambahkan
+        if (!el.value) {
+          const opt = document.createElement('option');
+          opt.value = _cfg[k]; opt.textContent = _cfg[k];
+          el.appendChild(opt);
+          el.value = _cfg[k];
+        }
+      }
+    });
+
+    _hasChanges = false;
+    document.getElementById('unsaved-alert').classList.add('d-none');
+    updateVisuals();
+    showToast('Konfigurasi dimuat', 'success');
+  } catch(e) {
+    showToast('Gagal memuat: ' + e.message, 'danger');
+  }
+}
+
+// ── Save settings ─────────────────────────────────────────────────────
+async function saveSettings() {
+  const btn = document.getElementById('btn-save');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Menyimpan…';
+
+  // Collect all values
+  const payload = {
+    anomaly_index_threshold:  parseFloat(document.getElementById('inp-anomaly_index_threshold').value),
+    anomaly_change_percent:   parseFloat(document.getElementById('inp-anomaly_change_percent').value),
+    ratio_industry_threshold: parseFloat(document.getElementById('inp-ratio_industry_threshold').value),
+    ratio_mixed_low:          parseFloat(document.getElementById('inp-ratio_mixed_low').value),
+    rainfall_high_mm:         parseFloat(document.getElementById('inp-rainfall_high_mm').value),
+    ika_gap_warning:          parseFloat(document.getElementById('inp-ika_gap_warning').value),
+    ika_gap_critical:         parseFloat(document.getElementById('inp-ika_gap_critical').value),
+    target_das:    document.getElementById('inp-target_das').value.trim(),
+    target_region: document.getElementById('inp-target_region').value.trim(),
+    agent_model:     document.getElementById('inp-agent_model').value,
+    evaluator_model: document.getElementById('inp-evaluator_model').value,
+    analyst_model:   document.getElementById('inp-analyst_model').value,
+    reporter_model:  document.getElementById('inp-reporter_model').value,
+  };
+
+  // Validate
+  if (payload.ratio_mixed_low >= payload.ratio_industry_threshold) {
+    showToast('Batas CAMPURAN harus lebih kecil dari batas INDUSTRI', 'warning');
+    btn.disabled=false; btn.innerHTML='<i class="bi bi-floppy-fill me-1"></i>Simpan Konfigurasi';
+    return;
+  }
+  if (payload.ika_gap_critical >= payload.ika_gap_warning) {
+    showToast('Batas TINDAK harus lebih kecil dari batas WASPADA', 'warning');
+    btn.disabled=false; btn.innerHTML='<i class="bi bi-floppy-fill me-1"></i>Simpan Konfigurasi';
+    return;
+  }
+
+  try {
+    const r = await fetch('/api/admin/settings', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload),
+    });
+    const d = await r.json();
+    if (d.saved) {
+      _cfg = {..._cfg, ...payload};
+      _hasChanges = false;
+      document.getElementById('unsaved-alert').classList.add('d-none');
+      showToast(`✅ Tersimpan — ${d.updated.length} setting diperbarui`, 'success');
+    } else {
+      throw new Error(d.error || 'Unknown error');
+    }
+  } catch(e) {
+    showToast('Gagal simpan: ' + e.message, 'danger');
+  } finally {
+    btn.disabled=false;
+    btn.innerHTML='<i class="bi bi-floppy-fill me-1"></i>Simpan Konfigurasi';
+  }
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────
+function showToast(msg, type='success') {
+  const colors = {success:'#0ead69', danger:'#e74c3c', warning:'#f39c12', info:'#1d6fa4'};
+  const el = document.getElementById('toast-msg');
+  el.style.background = colors[type] || colors.success;
+  document.getElementById('toast-text').textContent = msg;
+  const t = new bootstrap.Toast(el, {delay:3000});
+  t.show();
+}
+
+// Warn before leave if unsaved
+window.addEventListener('beforeunload', e => {
+  if(_hasChanges){ e.preventDefault(); e.returnValue=''; }
+});
+
+// Init
+loadSettings();
+</script>
+</body>
+</html>

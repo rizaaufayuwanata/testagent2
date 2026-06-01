@@ -16648,3 +16648,96 @@ COMBINED ASSESSMENT:
 2026-06-01 15:35:58,570 INFO Cache HIT: station:KLHK15:2026-06-01 (696s saved)
 2026-06-01 15:35:58,571 INFO Job job-277c11e8c20f served from cache in 0s
 2026-06-01 15:35:59,399 INFO 127.0.0.1 - - [01/Jun/2026 15:35:59] "GET /api/analyze/job-277c11e8c20f HTTP/1.1" 200 -
+2026-06-01 15:35:59,563 INFO 127.0.0.1 - - [01/Jun/2026 15:35:59] "GET /api/log?offset=0 HTTP/1.1" 200 -
+2026-06-01 15:35:59,584 INFO 127.0.0.1 - - [01/Jun/2026 15:35:59] "GET /api/bmkg HTTP/1.1" 200 -
+2026-06-01 15:35:59,627 INFO 127.0.0.1 - - [01/Jun/2026 15:35:59] "GET /api/anomaly_log HTTP/1.1" 200 -
+2026-06-01 15:35:59,949 INFO 127.0.0.1 - - [01/Jun/2026 15:35:59] "GET /api/sitala HTTP/1.1" 200 -
+2026-06-01 15:35:59,992 INFO 127.0.0.1 - - [01/Jun/2026 15:35:59] "GET /api/summary HTTP/1.1" 200 -
+2026-06-01 15:36:00,050 INFO 127.0.0.1 - - [01/Jun/2026 15:36:00] "GET /api/sparing HTTP/1.1" 200 -
+2026-06-01 15:36:00,212 INFO 127.0.0.1 - - [01/Jun/2026 15:36:00] "GET /api/onlimo HTTP/1.1" 200 -
+2026-06-01 15:36:01,002 INFO 127.0.0.1 - - [01/Jun/2026 15:36:01] "GET /api/analyze/job-277c11e8c20f HTTP/1.1" 200 -
+2026-06-01 15:40:31,089 INFO [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.1.100:5000
+2026-06-01 15:40:31,091 INFO [33mPress CTRL+C to quit[0m
+2026-06-01 15:40:46,759 INFO 127.0.0.1 - - [01/Jun/2026 15:40:46] "GET /api/onlimo HTTP/1.1" 200 -
+2026-06-01 15:40:52,576 INFO 127.0.0.1 - - [01/Jun/2026 15:40:52] "GET /api/bmkg HTTP/1.1" 200 -
+2026-06-01 15:40:52,631 INFO 127.0.0.1 - - [01/Jun/2026 15:40:52] "GET /api/anomaly_log HTTP/1.1" 200 -
+2026-06-01 15:40:52,943 INFO 127.0.0.1 - - [01/Jun/2026 15:40:52] "GET /api/summary HTTP/1.1" 200 -
+2026-06-01 15:40:53,013 INFO 127.0.0.1 - - [01/Jun/2026 15:40:53] "GET /api/sitala HTTP/1.1" 200 -
+2026-06-01 15:40:53,057 INFO 127.0.0.1 - - [01/Jun/2026 15:40:53] "GET /api/sparing HTTP/1.1" 200 -
+2026-06-01 15:40:53,131 INFO 127.0.0.1 - - [01/Jun/2026 15:40:53] "GET /api/onlimo HTTP/1.1" 200 -
+2026-06-01 15:41:08,741 INFO 127.0.0.1 - - [01/Jun/2026 15:41:08] "GET / HTTP/1.1" 200 -
+2026-06-01 15:41:11,321 INFO 127.0.0.1 - - [01/Jun/2026 15:41:11] "GET /api/anomaly_log HTTP/1.1" 200 -
+2026-06-01 15:41:11,322 INFO 127.0.0.1 - - [01/Jun/2026 15:41:11] "GET /api/bmkg HTTP/1.1" 200 -
+2026-06-01 15:41:11,633 INFO 127.0.0.1 - - [01/Jun/2026 15:41:11] "GET /api/sitala HTTP/1.1" 200 -
+2026-06-01 15:41:11,649 INFO 127.0.0.1 - - [01/Jun/2026 15:41:11] "GET /api/summary HTTP/1.1" 200 -
+2026-06-01 15:41:11,743 INFO 127.0.0.1 - - [01/Jun/2026 15:41:11] "GET /api/sparing HTTP/1.1" 200 -
+2026-06-01 15:41:11,821 INFO 127.0.0.1 - - [01/Jun/2026 15:41:11] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+2026-06-01 15:41:12,054 INFO 127.0.0.1 - - [01/Jun/2026 15:41:12] "GET /api/onlimo HTTP/1.1" 200 -
+2026-06-01 15:41:58,272 INFO 127.0.0.1 - - [01/Jun/2026 15:41:58] "GET /api/stations-by-status?category=all HTTP/1.1" 200 -
+2026-06-01 15:42:03,789 INFO 127.0.0.1 - - [01/Jun/2026 15:42:03] "GET /api/stations-by-status?category=critical HTTP/1.1" 200 -
+2026-06-01 15:42:07,543 INFO 127.0.0.1 - - [01/Jun/2026 15:42:07] "GET /api/stations-by-status?category=warning HTTP/1.1" 200 -
+2026-06-01 15:42:10,367 INFO 127.0.0.1 - - [01/Jun/2026 15:42:10] "GET /api/stations-by-status?category=good HTTP/1.1" 200 -
+2026-06-01 15:42:17,989 INFO Cache HIT: station:KLHK15:2026-06-01 (696s saved)
+2026-06-01 15:42:17,990 INFO 127.0.0.1 - - [01/Jun/2026 15:42:17] "POST /api/analyze HTTP/1.1" 200 -
+2026-06-01 15:42:19,672 INFO Job job-078f49231b0a: station / KLHK15 force=False
+2026-06-01 15:42:19,673 INFO 127.0.0.1 - - [01/Jun/2026 15:42:19] "[35m[1mPOST /api/analyze HTTP/1.1[0m" 202 -
+2026-06-01 15:42:19,737 INFO Cache HIT: station:KLHK15:2026-06-01 (696s saved)
+2026-06-01 15:42:19,743 INFO Job job-078f49231b0a served from cache in 0s
+2026-06-01 15:42:20,601 INFO 127.0.0.1 - - [01/Jun/2026 15:42:20] "GET /api/analyze/job-078f49231b0a HTTP/1.1" 200 -
+2026-06-01 15:42:20,788 INFO 127.0.0.1 - - [01/Jun/2026 15:42:20] "GET /api/log?offset=0 HTTP/1.1" 200 -
+2026-06-01 15:42:20,805 INFO 127.0.0.1 - - [01/Jun/2026 15:42:20] "GET /api/bmkg HTTP/1.1" 200 -
+2026-06-01 15:42:20,867 INFO 127.0.0.1 - - [01/Jun/2026 15:42:20] "GET /api/anomaly_log HTTP/1.1" 200 -
+2026-06-01 15:42:21,157 INFO 127.0.0.1 - - [01/Jun/2026 15:42:21] "GET /api/summary HTTP/1.1" 200 -
+2026-06-01 15:42:21,193 INFO 127.0.0.1 - - [01/Jun/2026 15:42:21] "GET /api/sitala HTTP/1.1" 200 -
+2026-06-01 15:42:21,346 INFO 127.0.0.1 - - [01/Jun/2026 15:42:21] "GET /api/sparing HTTP/1.1" 200 -
+2026-06-01 15:42:21,464 INFO 127.0.0.1 - - [01/Jun/2026 15:42:21] "GET /api/onlimo HTTP/1.1" 200 -
+2026-06-01 15:42:38,107 INFO 127.0.0.1 - - [01/Jun/2026 15:42:38] "GET /api/analyze/job-078f49231b0a/detail HTTP/1.1" 200 -
+2026-06-01 15:42:46,026 INFO 127.0.0.1 - - [01/Jun/2026 15:42:46] "GET /api/analyze/job-078f49231b0a HTTP/1.1" 200 -
+2026-06-01 15:43:13,386 INFO 127.0.0.1 - - [01/Jun/2026 15:43:13] "GET /api/station-trend/KLHK15?days=30 HTTP/1.1" 200 -
+2026-06-01 15:43:29,855 INFO 127.0.0.1 - - [01/Jun/2026 15:43:29] "GET /api/station-trend/KLHK52?days=30 HTTP/1.1" 200 -
+2026-06-01 15:43:39,824 INFO 127.0.0.1 - - [01/Jun/2026 15:43:39] "GET /api/onlimo HTTP/1.1" 200 -
+2026-06-01 15:44:02,191 INFO 127.0.0.1 - - [01/Jun/2026 15:44:02] "GET /api/station-trend/KLHK43?days=30 HTTP/1.1" 200 -
+2026-06-01 15:46:11,826 INFO 127.0.0.1 - - [01/Jun/2026 15:46:11] "GET /api/anomaly_log HTTP/1.1" 200 -
+2026-06-01 15:46:11,830 INFO 127.0.0.1 - - [01/Jun/2026 15:46:11] "GET /api/bmkg HTTP/1.1" 200 -
+2026-06-01 15:46:12,184 INFO 127.0.0.1 - - [01/Jun/2026 15:46:12] "GET /api/sitala HTTP/1.1" 200 -
+2026-06-01 15:46:12,253 INFO 127.0.0.1 - - [01/Jun/2026 15:46:12] "GET /api/summary HTTP/1.1" 200 -
+2026-06-01 15:46:12,303 INFO 127.0.0.1 - - [01/Jun/2026 15:46:12] "GET /api/sparing HTTP/1.1" 200 -
+2026-06-01 15:46:12,596 INFO 127.0.0.1 - - [01/Jun/2026 15:46:12] "GET /api/onlimo HTTP/1.1" 200 -
+2026-06-01 15:46:35,120 INFO 127.0.0.1 - - [01/Jun/2026 15:46:35] "GET /api/analyze/job-078f49231b0a/detail HTTP/1.1" 200 -
+2026-06-01 15:51:11,843 INFO 127.0.0.1 - - [01/Jun/2026 15:51:11] "GET /api/bmkg HTTP/1.1" 200 -
+2026-06-01 15:51:11,849 INFO 127.0.0.1 - - [01/Jun/2026 15:51:11] "GET /api/anomaly_log HTTP/1.1" 200 -
+2026-06-01 15:51:12,229 INFO 127.0.0.1 - - [01/Jun/2026 15:51:12] "GET /api/summary HTTP/1.1" 200 -
+2026-06-01 15:51:12,287 INFO 127.0.0.1 - - [01/Jun/2026 15:51:12] "GET /api/sitala HTTP/1.1" 200 -
+2026-06-01 15:51:12,384 INFO 127.0.0.1 - - [01/Jun/2026 15:51:12] "GET /api/sparing HTTP/1.1" 200 -
+2026-06-01 15:51:12,572 INFO 127.0.0.1 - - [01/Jun/2026 15:51:12] "GET /api/onlimo HTTP/1.1" 200 -
+2026-06-01 15:56:11,801 INFO 127.0.0.1 - - [01/Jun/2026 15:56:11] "GET /api/anomaly_log HTTP/1.1" 200 -
+2026-06-01 15:56:11,812 INFO 127.0.0.1 - - [01/Jun/2026 15:56:11] "GET /api/bmkg HTTP/1.1" 200 -
+2026-06-01 15:56:12,232 INFO 127.0.0.1 - - [01/Jun/2026 15:56:12] "GET /api/sitala HTTP/1.1" 200 -
+2026-06-01 15:56:12,271 INFO 127.0.0.1 - - [01/Jun/2026 15:56:12] "GET /api/summary HTTP/1.1" 200 -
+2026-06-01 15:56:12,372 INFO 127.0.0.1 - - [01/Jun/2026 15:56:12] "GET /api/sparing HTTP/1.1" 200 -
+2026-06-01 15:56:12,471 INFO 127.0.0.1 - - [01/Jun/2026 15:56:12] "GET /api/onlimo HTTP/1.1" 200 -
+2026-06-01 16:00:04,657 INFO [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.1.100:5000
+2026-06-01 16:00:04,658 INFO [33mPress CTRL+C to quit[0m
+2026-06-01 16:00:13,049 INFO 127.0.0.1 - - [01/Jun/2026 16:00:13] "GET / HTTP/1.1" 200 -
+2026-06-01 16:00:13,830 INFO 127.0.0.1 - - [01/Jun/2026 16:00:13] "GET /api/anomaly_log HTTP/1.1" 200 -
+2026-06-01 16:00:13,839 INFO 127.0.0.1 - - [01/Jun/2026 16:00:13] "GET /api/bmkg HTTP/1.1" 200 -
+2026-06-01 16:00:14,205 INFO 127.0.0.1 - - [01/Jun/2026 16:00:14] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+2026-06-01 16:00:14,226 INFO 127.0.0.1 - - [01/Jun/2026 16:00:14] "GET /api/sitala HTTP/1.1" 200 -
+2026-06-01 16:00:14,274 INFO 127.0.0.1 - - [01/Jun/2026 16:00:14] "GET /api/summary HTTP/1.1" 200 -
+2026-06-01 16:00:14,331 INFO 127.0.0.1 - - [01/Jun/2026 16:00:14] "GET /api/sparing HTTP/1.1" 200 -
+2026-06-01 16:00:14,486 INFO 127.0.0.1 - - [01/Jun/2026 16:00:14] "GET /api/onlimo HTTP/1.1" 200 -
+2026-06-01 16:00:16,853 INFO 127.0.0.1 - - [01/Jun/2026 16:00:16] "GET /admin/settings HTTP/1.1" 200 -
+2026-06-01 16:00:17,068 INFO 127.0.0.1 - - [01/Jun/2026 16:00:17] "GET /api/admin/settings HTTP/1.1" 200 -
+2026-06-01 16:00:43,003 INFO 127.0.0.1 - - [01/Jun/2026 16:00:43] "GET / HTTP/1.1" 200 -
+2026-06-01 16:00:43,254 INFO 127.0.0.1 - - [01/Jun/2026 16:00:43] "GET /api/anomaly_log HTTP/1.1" 200 -
+2026-06-01 16:00:43,270 INFO 127.0.0.1 - - [01/Jun/2026 16:00:43] "GET /api/bmkg HTTP/1.1" 200 -
+2026-06-01 16:00:43,576 INFO 127.0.0.1 - - [01/Jun/2026 16:00:43] "GET /api/sitala HTTP/1.1" 200 -
+2026-06-01 16:00:43,671 INFO 127.0.0.1 - - [01/Jun/2026 16:00:43] "GET /api/summary HTTP/1.1" 200 -
+2026-06-01 16:00:43,725 INFO 127.0.0.1 - - [01/Jun/2026 16:00:43] "GET /api/sparing HTTP/1.1" 200 -
+2026-06-01 16:00:43,815 INFO 127.0.0.1 - - [01/Jun/2026 16:00:43] "GET /api/onlimo HTTP/1.1" 200 -

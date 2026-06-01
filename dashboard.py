@@ -506,6 +506,139 @@ def api_stations():
 # ADMIN — ETL PAGE & ROUTES
 # =============================================================================
 
+@app.route("/admin/settings")
+def admin_settings_page():
+    return render_template("settings.html")
+
+
+@app.route("/api/admin/settings", methods=["GET"])
+def admin_settings_get():
+    """Baca konfigurasi aktif."""
+    import config as cfg
+    return jsonify({
+        # Threshold analisis
+        "anomaly_index_threshold":  cfg.ANOMALY_INDEX_THRESHOLD,
+        "anomaly_change_percent":   cfg.ANOMALY_CHANGE_PERCENT,
+        "ratio_industry_threshold": cfg.RATIO_INDUSTRY_THRESHOLD,
+        "ratio_mixed_low":          cfg.RATIO_MIXED_LOW,
+        "rainfall_high_mm":         cfg.RAINFALL_HIGH_MM,
+        "ika_gap_warning":          cfg.IKA_GAP_WARNING,
+        "ika_gap_critical":         cfg.IKA_GAP_CRITICAL,
+        # Domain
+        "target_das":    cfg.TARGET_DAS,
+        "target_region": cfg.TARGET_REGION,
+        # Model AI
+        "agent_model":     cfg.AGENT_MODEL,
+        "evaluator_model": cfg.EVALUATOR_MODEL,
+        "analyst_model":   cfg.ANALYST_MODEL,
+        "reporter_model":  cfg.REPORTER_MODEL,
+    })
+
+
+@app.route("/api/admin/settings", methods=["POST"])
+def admin_settings_save():
+    """Simpan konfigurasi ke wqsa.env dan update in-memory."""
+    data = request.get_json(force=True, silent=True) or {}
+    env_path = os.path.join(_BASE_DIR, "wqsa.env")
+
+    # Mapping JSON key → env var name → tipe
+    FIELD_MAP = {
+        "anomaly_index_threshold":  ("ANOMALY_INDEX_THRESHOLD",  float),
+        "anomaly_change_percent":   ("ANOMALY_CHANGE_PERCENT",   float),
+        "ratio_industry_threshold": ("RATIO_INDUSTRY_THRESHOLD", float),
+        "ratio_mixed_low":          ("RATIO_MIXED_LOW",          float),
+        "rainfall_high_mm":         ("RAINFALL_HIGH_MM",         float),
+        "ika_gap_warning":          ("IKA_GAP_WARNING",          float),
+        "ika_gap_critical":         ("IKA_GAP_CRITICAL",         float),
+        "target_das":               ("TARGET_DAS",               str),
+        "target_region":            ("TARGET_REGION",            str),
+        "agent_model":              ("AGENT_MODEL",              str),
+        "evaluator_model":          ("EVALUATOR_MODEL",          str),
+        "analyst_model":            ("ANALYST_MODEL",            str),
+        "reporter_model":           ("REPORTER_MODEL",           str),
+    }
+
+    # Baca wqsa.env dan update baris per baris
+    try:
+        with open(env_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+    except Exception:
+        lines = []
+
+    updated_keys = {}
+    for json_key, (env_key, cast) in FIELD_MAP.items():
+        if json_key not in data:
+            continue
+        try:
+            val = cast(data[json_key])
+        except (ValueError, TypeError):
+            continue
+        updated_keys[env_key] = str(val)
+
+    # Update atau tambahkan baris di env file
+    new_lines = []
+    found = set()
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("#") or "=" not in stripped:
+            new_lines.append(line)
+            continue
+        key = stripped.split("=", 1)[0].strip()
+        if key in updated_keys:
+            new_lines.append(f"{key}={updated_keys[key]}\n")
+            found.add(key)
+        else:
+            new_lines.append(line)
+    # Tambahkan key yang belum ada
+    for key, val in updated_keys.items():
+        if key not in found:
+            new_lines.append(f"{key}={val}\n")
+
+    with open(env_path, "w", encoding="utf-8") as f:
+        f.writelines(new_lines)
+
+    # Update in-memory config
+    import importlib, config as cfg
+    from dotenv import load_dotenv
+    load_dotenv(env_path, override=True)
+    importlib.reload(cfg)
+
+    # Update modules yang sudah import dari config
+    _sync_runtime_config(cfg)
+
+    logger.info(f"Settings updated: {list(updated_keys.keys())}")
+    return jsonify({"saved": True, "updated": list(updated_keys.keys())})
+
+
+def _sync_runtime_config(cfg):
+    """Sinkronkan nilai config ke semua module yang sudah import konstanta."""
+    try:
+        import tools, agents, chain, data_layer
+        # tools.py
+        tools.ANOMALY_INDEX_THRESHOLD = cfg.ANOMALY_INDEX_THRESHOLD
+        tools.ANOMALY_CHANGE_PERCENT  = cfg.ANOMALY_CHANGE_PERCENT
+        tools.RATIO_INDUSTRY_THRESHOLD= cfg.RATIO_INDUSTRY_THRESHOLD
+        tools.RATIO_MIXED_LOW         = cfg.RATIO_MIXED_LOW
+        tools.RAINFALL_HIGH_MM        = cfg.RAINFALL_HIGH_MM
+        tools.IKA_GAP_WARNING         = cfg.IKA_GAP_WARNING
+        tools.IKA_GAP_CRITICAL        = cfg.IKA_GAP_CRITICAL
+        # agents.py
+        agents.ANALYST_MODEL    = cfg.ANALYST_MODEL
+        agents.EVALUATOR_MODEL  = cfg.EVALUATOR_MODEL
+        agents.REPORTER_MODEL   = cfg.REPORTER_MODEL
+        agents.ANOMALY_INDEX_THRESHOLD = cfg.ANOMALY_INDEX_THRESHOLD
+        agents.RAINFALL_HIGH_MM        = cfg.RAINFALL_HIGH_MM
+        agents.IKA_GAP_WARNING         = cfg.IKA_GAP_WARNING
+        agents.IKA_GAP_CRITICAL        = cfg.IKA_GAP_CRITICAL
+        # chain.py
+        chain.ANOMALY_INDEX_THRESHOLD = cfg.ANOMALY_INDEX_THRESHOLD
+        # data_layer
+        data_layer.IKA_GAP_WARNING  = cfg.IKA_GAP_WARNING
+        data_layer.IKA_GAP_CRITICAL = cfg.IKA_GAP_CRITICAL
+    except Exception as e:
+        logger.warning(f"_sync_runtime_config partial error: {e}")
+
+
 @app.route("/admin/etl")
 def admin_etl():
     return render_template("etl.html")
