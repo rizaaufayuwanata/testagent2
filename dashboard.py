@@ -135,6 +135,26 @@ def api_summary():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/diag-summary")
+def api_diag_summary():
+    """Diagnostik: lihat distribusi status_warna dan status_mutu aktual di DB."""
+    try:
+        from data_layer import _query
+        rows = _query("""
+            SELECT
+                COALESCE(status_warna, 'NULL') AS warna,
+                COALESCE(status_mutu,  'NULL') AS mutu,
+                COUNT(*) AS jumlah
+            FROM v_onlimo_terbaru
+            GROUP BY status_warna, status_mutu
+            ORDER BY jumlah DESC
+            LIMIT 30
+        """)
+        return jsonify(rows)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/onlimo")
 def api_onlimo():
     try:
@@ -410,6 +430,10 @@ def _run_etl_job(job_id: str, source: str, days_back: int, station_ids: list = N
         _etl_jobs[job_id]["status"]   = "done"
         _etl_jobs[job_id]["results"]  = results
         _etl_jobs[job_id]["total"]    = total
+        # Bersihkan cache agar dashboard langsung tampilkan data terbaru
+        from data_layer import cache
+        cache.clear()
+        logger.info(f"ETL job {job_id} done — cache cleared")
     except Exception as e:
         logger.exception(f"ETL job {job_id} failed")
         _etl_jobs[job_id]["status"] = "error"
@@ -448,6 +472,15 @@ def admin_etl_status(job_id: str):
     if not job:
         return jsonify({"error": "Job not found"}), 404
     return jsonify({"job_id": job_id, **job})
+
+
+@app.route("/admin/etl/clear-cache", methods=["POST"])
+def admin_clear_cache():
+    from data_layer import cache
+    n = cache.size()
+    cache.clear()
+    logger.info(f"Cache cleared: {n} entries removed")
+    return jsonify({"cleared": True, "entries_removed": n})
 
 
 @app.route("/admin/etl/onlimo-stations")

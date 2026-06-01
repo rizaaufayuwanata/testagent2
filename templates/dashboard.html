@@ -7,470 +7,1015 @@
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css" rel="stylesheet">
 <style>
-  :root { --wqsa-blue:#0d6efd; --wqsa-teal:#0dcaf0; --wqsa-green:#198754; --wqsa-yellow:#ffc107; --wqsa-red:#dc3545; --wqsa-gray:#6c757d; }
-  body { background:#f0f4f8; font-size:.88rem; }
-  #navbar { background:linear-gradient(90deg,#0a3d62,#1a6fa8); }
-  #navbar .navbar-brand { font-weight:700; font-size:1.1rem; }
-  .kpi-card { border:none; border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,.08); transition:transform .15s; }
-  .kpi-card:hover { transform:translateY(-2px); }
-  .kpi-icon { font-size:2rem; }
-  #map { height:380px; border-radius:10px; }
-  .section-title { font-weight:700; font-size:.95rem; text-transform:uppercase; letter-spacing:.5px; color:#0a3d62; }
-  .status-dot { width:10px; height:10px; border-radius:50%; display:inline-block; }
-  .dot-red { background:var(--wqsa-red); } .dot-yellow { background:var(--wqsa-yellow); }
-  .dot-green { background:var(--wqsa-green); } .dot-gray { background:var(--wqsa-gray); }
-  .urgency-TINDAK { color:var(--wqsa-red); font-weight:700; }
-  .urgency-WASPADA { color:var(--wqsa-yellow); font-weight:700; }
-  .urgency-PANTAU { color:var(--wqsa-green); font-weight:600; }
-  .chart-wrap { position:relative; height:240px; }
-  .highlight-card { border-left:4px solid var(--wqsa-blue); background:#fff; }
-  .highlight-card.urgency-bg-TINDAK { border-left-color:var(--wqsa-red); }
-  .highlight-card.urgency-bg-WASPADA { border-left-color:var(--wqsa-yellow); }
-  .highlight-card.urgency-bg-PANTAU { border-left-color:var(--wqsa-green); }
-  #detail-modal .modal-dialog { max-width:900px; }
-  #detail-body { max-height:70vh; overflow-y:auto; font-size:.85rem; }
-  .step-badge { display:inline-block; width:24px; height:24px; border-radius:50%; background:#0a3d62; color:#fff; text-align:center; line-height:24px; font-size:.75rem; font-weight:700; margin-right:.4rem; }
-  .analysis-controls .btn { min-width:140px; }
-  footer { font-size:.78rem; color:#6c757d; }
+/* ── Base ──────────────────────────────────────────────────────────── */
+:root {
+  --navy:      #0f2744;
+  --navy-mid:  #1a3a5c;
+  --blue:      #1d6fa4;
+  --accent:    #00b4d8;
+  --green:     #0ead69;
+  --yellow:    #f4a261;
+  --red:       #e63946;
+  --purple:    #7b2d8b;
+  --gray-bg:   #f0f4f8;
+  --card-bg:   #ffffff;
+  --border:    #e2e8f0;
+  --text:      #1e293b;
+  --text-muted:#64748b;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.05);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.1), 0 2px 4px rgba(0,0,0,.06);
+  --radius:    12px;
+}
+*, *::before, *::after { box-sizing: border-box; }
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background: var(--gray-bg);
+  color: var(--text);
+  font-size: .875rem;
+  min-height: 100vh;
+}
 
-  /* Live Log Terminal */
-  #log-panel {
-    background:#0d1117; color:#58a6ff; font-family:'Courier New',monospace;
-    font-size:.78rem; border-radius:8px; padding:10px 12px;
-    height:280px; overflow-y:auto; border:1px solid #30363d;
-  }
-  #log-panel .log-line { line-height:1.5; white-space:pre-wrap; word-break:break-all; }
-  #log-panel .log-line.phase { color:#3fb950; font-weight:700; }
-  #log-panel .log-line.llm  { color:#d2a8ff; }
-  #log-panel .log-line.step { color:#e3b341; }
-  #log-panel .log-line.done { color:#3fb950; font-weight:700; }
-  #log-panel .log-line.err  { color:#f85149; }
-  #log-panel .log-cursor { display:inline-block; width:8px; height:14px; background:#58a6ff; animation:blink 1s step-end infinite; vertical-align:middle; }
-  @keyframes blink { 50%{ opacity:0 } }
+/* ── Navbar ──────────────────────────────────────────────────────────── */
+#navbar {
+  background: linear-gradient(135deg, var(--navy) 0%, var(--navy-mid) 60%, #1a5276 100%);
+  box-shadow: 0 2px 12px rgba(0,0,0,.25);
+  padding: .65rem 1.5rem;
+  position: sticky; top: 0; z-index: 1030;
+}
+.brand-logo { font-size: 1.25rem; font-weight: 700; color: #fff; letter-spacing: -.3px; }
+.brand-logo span { color: var(--accent); }
+.nav-badge { background: rgba(255,255,255,.12); color: #e0f2fe; font-size: .72rem;
+  padding: 2px 10px; border-radius: 20px; border: 1px solid rgba(255,255,255,.2); }
+.btn-nav { background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.25);
+  color: #fff; border-radius: 8px; font-size: .78rem; padding: 5px 14px;
+  transition: background .2s; }
+.btn-nav:hover { background: rgba(255,255,255,.22); color: #fff; }
+#clock { color: rgba(255,255,255,.6); font-size: .78rem; font-variant-numeric: tabular-nums; }
 
-  /* Hasil Analisis Panel */
-  #result-panel { min-height:340px; }
-  .result-station-card { border-left:4px solid #6c757d; background:#fff; border-radius:6px; padding:10px 12px; margin-bottom:8px; }
-  .result-station-card.TINDAK { border-left-color:var(--wqsa-red); }
-  .result-station-card.WASPADA { border-left-color:var(--wqsa-yellow); }
-  .result-station-card.PANTAU { border-left-color:var(--wqsa-green); }
-  .action-item { background:#f8f9fa; border-radius:4px; padding:6px 10px; margin-bottom:4px; font-size:.82rem; }
-  .badge-tindak { background:var(--wqsa-red)!important; }
-  .badge-waspada { background:var(--wqsa-yellow)!important; color:#000!important; }
-  .badge-pantau { background:var(--wqsa-green)!important; }
-  /* Narasi */
-  .narrative-box { background:#f8f9fa; border:1px solid #dee2e6; border-radius:6px;
-    padding:12px 14px; font-size:.82rem; line-height:1.7; white-space:pre-wrap;
-    word-break:break-word; max-height:340px; overflow-y:auto; font-family:'Segoe UI',sans-serif; }
-  .narrative-box .nar-station   { color:#0a3d62; font-weight:700; font-size:.88rem; }
-  .narrative-box .nar-anomaly   { color:#dc3545; font-weight:600; }
-  .narrative-box .nar-pantau    { color:#198754; font-weight:600; }
-  .narrative-box .nar-waspada   { color:#e67e22; font-weight:600; }
-  .narrative-box .nar-tindak    { color:#dc3545; font-weight:700; }
-  .narrative-box .nar-header    { color:#0a3d62; font-weight:700; border-bottom:1px solid #dee2e6;
-    margin-bottom:6px; padding-bottom:4px; display:block; }
-  .narrative-box .nar-key       { color:#6f42c1; font-weight:600; }
-  .narrative-box .nar-value     { color:#495057; }
-  /* Reliability */
-  .reliability-banner { border-radius:6px; padding:10px 14px; font-size:.83rem; margin-bottom:12px; }
-  .reliability-SENSOR_FAILURE { background:#fff3cd; border:1px solid #ffc107; color:#664d03; }
-  .reliability-NO_DATA        { background:#f8d7da; border:1px solid #dc3545; color:#58151c; }
-  .reliability-LOW_QUALITY    { background:#fff3cd; border:1px solid #ffc107; color:#664d03; }
-  .urgency-card-unreliable    { background:#f8f9fa!important; border:2px dashed #adb5bd!important; color:#6c757d!important; }
+/* ── Page Layout ─────────────────────────────────────────────────────── */
+.page-wrapper { padding: 1.25rem 1.5rem; max-width: 1600px; margin: 0 auto; }
+.section-card {
+  background: var(--card-bg);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border);
+}
+.section-card:hover { box-shadow: var(--shadow-md); }
+.card-title-bar {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: .85rem 1.1rem;
+  border-bottom: 1px solid var(--border);
+}
+.card-title-bar .title {
+  font-weight: 700; font-size: .8rem; text-transform: uppercase;
+  letter-spacing: .6px; color: var(--navy);
+  display: flex; align-items: center; gap: 6px;
+}
+.card-title-bar .title i { font-size: 1rem; color: var(--blue); }
+
+/* ── KPI Cards ───────────────────────────────────────────────────────── */
+.kpi-grid { display: grid; gap: 1rem;
+  grid-template-columns: repeat(6, 1fr); }
+@media (max-width:1200px){ .kpi-grid { grid-template-columns: repeat(3,1fr); } }
+@media (max-width:768px){ .kpi-grid { grid-template-columns: repeat(2,1fr); } }
+
+.kpi-card {
+  border-radius: var(--radius);
+  padding: 1.1rem 1.25rem;
+  display: flex; align-items: center; gap: .9rem;
+  color: #fff; position: relative; overflow: hidden;
+  box-shadow: var(--shadow-md);
+  transition: transform .18s, box-shadow .18s;
+}
+.kpi-card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,.15); }
+.kpi-card::after {
+  content: ''; position: absolute; right: -15px; top: -15px;
+  width: 80px; height: 80px; border-radius: 50%;
+  background: rgba(255,255,255,.1);
+}
+.kpi-icon-wrap {
+  width: 48px; height: 48px; border-radius: 12px;
+  background: rgba(255,255,255,.2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.5rem; flex-shrink: 0;
+}
+.kpi-info { min-width: 0; }
+.kpi-val { font-size: 1.75rem; font-weight: 700; line-height: 1; }
+.kpi-label { font-size: .7rem; opacity: .88; margin-top: 2px; font-weight: 500; }
+
+.kpi-stations  { background: linear-gradient(135deg, #1d6fa4, #0093c4); }
+.kpi-critical  { background: linear-gradient(135deg, #c0392b, #e74c3c); }
+.kpi-warning   { background: linear-gradient(135deg, #d4830a, #f39c12); }
+.kpi-good      { background: linear-gradient(135deg, #0a8a4e, #1abc9c); }
+.kpi-nostatus  { background: linear-gradient(135deg, #495057, #6c757d); }
+.kpi-rain      { background: linear-gradient(135deg, #1a6fa8, #00b4d8); }
+
+/* ── Analysis Section ────────────────────────────────────────────────── */
+.analysis-btn-group { display: flex; flex-wrap: wrap; gap: .5rem; padding: .85rem 1.1rem; }
+.btn-analyze {
+  background: linear-gradient(135deg, var(--navy-mid), var(--blue));
+  color: #fff; border: none; border-radius: 8px;
+  padding: 7px 16px; font-size: .8rem; font-weight: 600;
+  display: flex; align-items: center; gap: 6px;
+  transition: opacity .2s, transform .15s;
+}
+.btn-analyze:hover { opacity: .9; transform: translateY(-1px); color: #fff; }
+.btn-analyze:disabled { opacity: .55; transform: none; }
+.btn-analyze-outline {
+  background: transparent;
+  color: var(--blue); border: 1.5px solid var(--blue);
+  border-radius: 8px; padding: 6px 14px; font-size: .8rem; font-weight: 600;
+  display: flex; align-items: center; gap: 5px;
+  transition: all .2s;
+}
+.btn-analyze-outline:hover { background: var(--blue); color: #fff; }
+.btn-analyze-outline:disabled { opacity: .5; }
+
+.analysis-status-bar {
+  padding: .4rem 1.1rem;
+  background: #f8fafc;
+  border-bottom: 1px solid var(--border);
+  font-size: .78rem; color: var(--text-muted);
+  min-height: 30px;
+  display: flex; align-items: center; gap: 6px;
+}
+
+/* ── Log Terminal ────────────────────────────────────────────────────── */
+.log-terminal {
+  background: #0d1117;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+  font-size: .74rem;
+  color: #8b949e;
+  padding: .75rem 1rem;
+  overflow-y: auto;
+  height: 260px;
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+.log-line { line-height: 1.6; white-space: pre-wrap; word-break: break-all; }
+.log-line.phase { color: #3fb950; font-weight: 600; }
+.log-line.llm   { color: #d2a8ff; }
+.log-line.step  { color: #e3b341; }
+.log-line.done  { color: #3fb950; font-weight: 700; }
+.log-line.err   { color: #f85149; }
+
+/* ── Result Panel ────────────────────────────────────────────────────── */
+.result-placeholder {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 3rem 1rem; color: var(--text-muted); gap: .75rem;
+}
+.result-placeholder i { font-size: 3rem; opacity: .25; }
+.result-placeholder p { font-size: .85rem; text-align: center; margin: 0; }
+
+.loading-state {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 2.5rem 1rem; gap: .75rem;
+}
+.loading-spinner-wrap {
+  width: 64px; height: 64px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--navy-mid), var(--blue));
+  display: flex; align-items: center; justify-content: center;
+  animation: pulse 2s ease-in-out infinite;
+}
+.loading-spinner-wrap i { font-size: 1.75rem; color: #fff; }
+@keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
+
+.urgency-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px; border-radius: 20px; font-weight: 700; font-size: .8rem;
+}
+.urgency-chip.TINDAK  { background: #fde8e8; color: #c0392b; border: 1.5px solid #e74c3c; }
+.urgency-chip.WASPADA { background: #fff8e1; color: #b7770a; border: 1.5px solid #f4a261; }
+.urgency-chip.PANTAU  { background: #e6f9ef; color: #0a7a3e; border: 1.5px solid #0ead69; }
+.urgency-chip.INVALID { background: #f1f3f5; color: #6c757d; border: 1.5px dashed #adb5bd; }
+
+.station-result-card {
+  border-radius: 10px; padding: .85rem 1rem;
+  margin-bottom: .5rem; border: 1px solid var(--border);
+  background: #f8fafc;
+  border-left: 4px solid var(--text-muted);
+  transition: box-shadow .15s;
+}
+.station-result-card:hover { box-shadow: var(--shadow-sm); }
+.station-result-card.TINDAK  { border-left-color: var(--red);    background: #fff8f8; }
+.station-result-card.WASPADA { border-left-color: var(--yellow);  background: #fffdf4; }
+.station-result-card.PANTAU  { border-left-color: var(--green);   background: #f6fef9; }
+
+.action-card {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: .7rem .9rem;
+  margin-bottom: .4rem;
+  display: flex; gap: .75rem; align-items: flex-start;
+}
+.action-num {
+  width: 24px; height: 24px; border-radius: 50%;
+  background: var(--navy); color: #fff;
+  font-size: .7rem; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; margin-top: 1px;
+}
+
+/* ── Reliability Banner ─────────────────────────────────────────────── */
+.reliability-banner {
+  border-radius: 8px; padding: .75rem 1rem;
+  font-size: .81rem; margin-bottom: .75rem;
+  display: flex; gap: .6rem; align-items: flex-start;
+}
+.reliability-SENSOR_FAILURE { background: #fff8e1; border: 1px solid #f4a261; color: #7d4e00; }
+.reliability-NO_DATA        { background: #fdecea; border: 1px solid #e74c3c; color: #7b1c1c; }
+.reliability-LOW_QUALITY    { background: #fff8e1; border: 1px solid #f4a261; color: #7d4e00; }
+.urgency-card-unreliable    { background:#f8f9fa!important; border:2px dashed #adb5bd!important; color:#6c757d!important; }
+
+/* ── IKA Metric ──────────────────────────────────────────────────────── */
+.ika-metric { text-align: center; }
+.ika-metric .val { font-size: 1.4rem; font-weight: 700; line-height: 1; }
+.ika-metric .lbl { font-size: .68rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; }
+.ika-metric.good .val  { color: var(--green); }
+.ika-metric.warn .val  { color: var(--yellow); }
+.ika-metric.bad  .val  { color: var(--red); }
+
+/* ── Narrative ───────────────────────────────────────────────────────── */
+.narrative-box {
+  background: #fafbfc; border: 1px solid var(--border);
+  border-radius: 8px; padding: .85rem 1rem;
+  font-size: .8rem; line-height: 1.75;
+  white-space: pre-wrap; word-break: break-word;
+  max-height: 300px; overflow-y: auto;
+}
+.nar-header { color: var(--navy); font-weight: 700; display: block;
+  border-bottom: 1px solid var(--border); padding-bottom: 4px; margin-bottom: 6px; }
+.nar-station { color: var(--blue); font-weight: 700; }
+.nar-tindak  { color: var(--red); font-weight: 700; }
+.nar-waspada { color: #d4830a; font-weight: 700; }
+.nar-pantau  { color: var(--green); font-weight: 600; }
+.nar-anomaly { color: var(--red); font-weight: 600; }
+.nar-key     { color: var(--purple); font-weight: 600; }
+
+/* ── Map ─────────────────────────────────────────────────────────────── */
+#map { height: 390px; border-radius: 0 0 var(--radius) var(--radius); }
+
+/* ── Table ───────────────────────────────────────────────────────────── */
+.data-table { font-size: .78rem; margin: 0; }
+.data-table thead th {
+  background: var(--navy); color: #fff;
+  font-weight: 600; font-size: .72rem;
+  text-transform: uppercase; letter-spacing: .4px;
+  padding: .55rem .75rem; border: none; position: sticky; top: 0; z-index: 1;
+}
+.data-table tbody tr { transition: background .1s; border-bottom: 1px solid #f1f5f9; }
+.data-table tbody tr:hover { background: #f0f9ff; }
+.data-table tbody td { padding: .45rem .75rem; vertical-align: middle; border: none; }
+.tbl-wrap { overflow-y: auto; border-radius: 0 0 var(--radius) var(--radius); }
+
+/* ── Chart ───────────────────────────────────────────────────────────── */
+.chart-wrap { position: relative; padding: .85rem 1.1rem 1.1rem; }
+
+/* ── Step Badge ─────────────────────────────────────────────────────── */
+.step-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--navy); color: #fff;
+  font-size: .68rem; font-weight: 700; margin-right: .35rem;
+}
+
+/* ── Tom Select Override ─────────────────────────────────────────────── */
+.ts-wrapper.form-control, .ts-wrapper.form-select { padding: 0; }
+.ts-wrapper { flex: 1; min-width: 0; }
+.ts-control {
+  border: 1.5px solid var(--border) !important;
+  border-radius: 8px !important;
+  font-size: .8rem !important;
+  min-height: 32px !important;
+  padding: 4px 8px !important;
+  background: #fff !important;
+  box-shadow: none !important;
+  cursor: text !important;
+}
+.ts-control:focus-within { border-color: var(--blue) !important; box-shadow: 0 0 0 3px rgba(29,111,164,.15) !important; }
+.ts-dropdown { font-size: .8rem !important; border-radius: 8px !important;
+  box-shadow: 0 8px 24px rgba(0,0,0,.12) !important; border: 1px solid var(--border) !important;
+  margin-top: 2px !important; }
+.ts-dropdown .option { padding: 6px 10px !important; }
+.ts-dropdown .option:hover, .ts-dropdown .option.active { background: #e8f4fd !important; color: var(--navy) !important; }
+.ts-dropdown .option .station-opt-id { font-weight: 700; color: var(--blue); margin-right: 6px; }
+.ts-dropdown .option .station-opt-name { color: var(--text-muted); }
+.ts-dropdown-content { max-height: 240px !important; }
+
+/* ── Footer ──────────────────────────────────────────────────────────── */
+footer {
+  text-align: center; padding: 1.25rem;
+  font-size: .72rem; color: var(--text-muted);
+  border-top: 1px solid var(--border); margin-top: .5rem;
+}
+
+/* ── Modal ───────────────────────────────────────────────────────────── */
+.modal-content { border-radius: var(--radius); border: none; box-shadow: 0 20px 60px rgba(0,0,0,.2); }
+.modal-header { background: var(--navy); color: #fff; border-radius: var(--radius) var(--radius) 0 0; }
+.modal-header .btn-close { filter: invert(1); }
+#detail-body { max-height: 70vh; overflow-y: auto; }
+
+/* ── Misc Badges ─────────────────────────────────────────────────────── */
+.badge-status {
+  font-size: .68rem; padding: 3px 9px; border-radius: 12px; font-weight: 600;
+}
+.pulse-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--green);
+  display: inline-block;
+  animation: dotpulse 2s ease-in-out infinite;
+}
+@keyframes dotpulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(.8)} }
 </style>
 </head>
 <body>
 
-<nav class="navbar navbar-dark py-2 mb-3" id="navbar">
-  <div class="container-fluid">
-    <span class="navbar-brand"><i class="bi bi-water me-2"></i>WQSA v2 — Water Quality Dashboard</span>
-    <div class="d-flex align-items-center gap-3">
-      <span class="text-white-50 small" id="last-refresh">Memuat…</span>
-      <a href="/admin/etl" class="btn btn-outline-light btn-sm">
-        <i class="bi bi-cloud-download me-1"></i>Admin ETL
-      </a>
-    </div>
+<!-- ═══ NAVBAR ═══ -->
+<nav class="navbar navbar-dark" id="navbar">
+  <div class="d-flex align-items-center gap-3">
+    <div class="brand-logo"><i class="bi bi-water me-2" style="color:var(--accent)"></i>WQSA <span>v2</span></div>
+    <span class="nav-badge d-none d-md-inline">DAS Citarum · Kab. Bandung</span>
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    <span class="pulse-dot me-1"></span>
+    <span id="clock">–</span>
+    <span class="nav-badge ms-2" id="last-refresh" style="color:rgba(255,255,255,.7)">Memuat…</span>
+    <a href="/admin/etl" class="btn-nav ms-2 btn">
+      <i class="bi bi-cloud-download me-1"></i>Admin ETL
+    </a>
   </div>
 </nav>
 
-<div class="container-fluid px-3">
+<div class="page-wrapper">
 
-  <!-- KPI Cards -->
-  <div class="row g-3 mb-3" id="kpi-row">
-    <div class="col-6 col-md-3 col-xl-2"><div class="card kpi-card h-100 text-center py-3 bg-primary text-white"><div class="kpi-icon"><i class="bi bi-broadcast"></i></div><div class="fw-bold fs-3" id="kpi-stations">–</div><div class="small">Stasiun Aktif</div></div></div>
-    <div class="col-6 col-md-3 col-xl-2"><div class="card kpi-card h-100 text-center py-3 bg-danger text-white"><div class="kpi-icon"><i class="bi bi-exclamation-triangle"></i></div><div class="fw-bold fs-3" id="kpi-critical">–</div><div class="small">Cemar Berat</div></div></div>
-    <div class="col-6 col-md-3 col-xl-2"><div class="card kpi-card h-100 text-center py-3 bg-warning"><div class="kpi-icon"><i class="bi bi-exclamation-circle"></i></div><div class="fw-bold fs-3" id="kpi-warning">–</div><div class="small">Cemar Sedang</div></div></div>
-    <div class="col-6 col-md-3 col-xl-2"><div class="card kpi-card h-100 text-center py-3 bg-success text-white"><div class="kpi-icon"><i class="bi bi-check-circle"></i></div><div class="fw-bold fs-3" id="kpi-good">–</div><div class="small">Kondisi Baik</div></div></div>
-    <div class="col-6 col-md-3 col-xl-2"><div class="card kpi-card h-100 text-center py-3" style="background:#e8f4fd"><div class="kpi-icon text-info"><i class="bi bi-cloud-rain"></i></div><div class="fw-bold fs-3" id="kpi-rain">–</div><div class="small text-muted">Curah Hujan Max</div></div></div>
-    <div class="col-6 col-md-3 col-xl-2"><div class="card kpi-card h-100 text-center py-3" style="background:#e8f4fd"><div class="kpi-icon text-danger"><i class="bi bi-factory"></i></div><div class="fw-bold fs-3" id="kpi-langgar">–</div><div class="small text-muted">Pelanggaran SPARING</div></div></div>
-  </div>
-
-  <!-- ═══ ANALYSIS SECTION — dua kolom ═══ -->
-  <div class="row g-3 mb-3">
-
-    <!-- Kolom Kiri: Controls + Live Log -->
-    <div class="col-lg-5">
-      <div class="card border-0 shadow-sm h-100">
-        <div class="card-body d-flex flex-column">
-          <div class="d-flex justify-content-between align-items-center mb-3">
-            <span class="section-title"><i class="bi bi-robot me-1"></i>Analisis Agent</span>
-            <span class="small text-muted" id="analysis-status"></span>
-          </div>
-
-          <!-- Tombol Analisis -->
-          <div class="analysis-controls d-flex flex-wrap gap-2 mb-3">
-            <button class="btn btn-primary btn-sm" id="btn-full-scan" onclick="startAnalysis('full_scan')">
-              <i class="bi bi-broadcast me-1"></i>Analisis Semua Stasiun
-            </button>
-            <div class="input-group input-group-sm" style="max-width:300px">
-              <select class="form-select form-select-sm" id="sel-station"><option value="">Pilih stasiun…</option></select>
-              <button class="btn btn-outline-primary btn-sm" onclick="startAnalysis('station', document.getElementById('sel-station').value)">
-                <i class="bi bi-search"></i>
-              </button>
-            </div>
-            <div class="input-group input-group-sm" style="max-width:260px">
-              <input type="text" class="form-control form-control-sm" id="inp-region" placeholder="Kecamatan / Kabupaten">
-              <button class="btn btn-outline-primary btn-sm" onclick="startAnalysis('region', document.getElementById('inp-region').value)">
-                <i class="bi bi-geo-alt"></i>
-              </button>
-            </div>
-          </div>
-
-          <!-- Live Log Terminal -->
-          <div class="mb-1 d-flex justify-content-between align-items-center">
-            <span class="small fw-bold text-muted"><i class="bi bi-terminal me-1"></i>Live Log Agent</span>
-            <button class="btn btn-link btn-sm p-0 text-muted" onclick="clearLog()" title="Bersihkan log"><i class="bi bi-trash"></i></button>
-          </div>
-          <div id="log-panel" class="flex-grow-1">
-            <span class="log-line" style="color:#6e7681">— Log agent akan muncul di sini —</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Kolom Kanan: Hasil Analisis Agent -->
-    <div class="col-lg-7">
-      <div class="card border-0 shadow-sm h-100">
-        <div class="card-body d-flex flex-column" id="result-panel">
-          <div class="d-flex justify-content-between align-items-center mb-3">
-            <span class="section-title"><i class="bi bi-graph-up-arrow me-1"></i>Hasil Analisis Agent</span>
-            <div class="d-flex gap-2" id="result-actions" style="display:none!important">
-              <button class="btn btn-outline-secondary btn-sm" onclick="showDetail()">
-                <i class="bi bi-file-text me-1"></i>Detail Reasoning
-              </button>
-              <button class="btn btn-outline-info btn-sm" onclick="sendTelegram()">
-                <i class="bi bi-send me-1"></i>Kirim Telegram
-              </button>
-            </div>
-          </div>
-
-          <!-- Placeholder saat belum ada analisis -->
-          <div id="result-placeholder" class="text-center text-muted py-5 flex-grow-1 d-flex flex-column justify-content-center align-items-center">
-            <i class="bi bi-bar-chart-line" style="font-size:3rem;opacity:.3"></i>
-            <p class="mt-2 mb-0">Klik tombol analisis untuk memulai.<br><small>Hasil akan ditampilkan di sini setelah agent selesai.</small></p>
-          </div>
-
-          <!-- Spinner saat running -->
-          <div id="result-loading" class="text-center py-5 flex-grow-1 d-flex flex-column justify-content-center align-items-center d-none">
-            <div class="spinner-border text-primary mb-3" style="width:3rem;height:3rem"></div>
-            <p class="text-muted mb-0" id="result-loading-text">Agent sedang menganalisis…</p>
-            <small class="text-muted" id="result-elapsed"></small>
-          </div>
-
-          <!-- Konten hasil -->
-          <div id="result-content" class="d-none flex-grow-1 overflow-auto" style="max-height:480px">
-
-            <!-- Baris atas: Urgency + IKA -->
-            <div class="row g-2 mb-3" id="result-top">
-              <div class="col-sm-4">
-                <div class="card text-center p-3 h-100" id="result-urgency-card">
-                  <div class="small text-muted text-uppercase mb-1">Urgensi Keseluruhan</div>
-                  <div class="fs-1 fw-bold" id="result-urgency-icon">–</div>
-                  <div class="fw-bold fs-5" id="result-urgency-text">–</div>
-                  <div class="small text-muted mt-1" id="result-counts">–</div>
-                </div>
-              </div>
-              <div class="col-sm-8">
-                <div class="card p-3 h-100">
-                  <div class="small text-muted text-uppercase mb-2">Indeks Kualitas Air (IKA)</div>
-                  <div id="result-ika" class="small">–</div>
-                  <hr class="my-2">
-                  <div class="small text-muted text-uppercase mb-1">Data Quality</div>
-                  <div id="result-dq" class="small">–</div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Stasiun Anomali -->
-            <div class="mb-2">
-              <div class="small fw-bold text-uppercase text-muted mb-2"><i class="bi bi-exclamation-triangle me-1"></i>Stasiun Anomali</div>
-              <div id="result-stations">–</div>
-            </div>
-
-            <!-- Rekomendasi Prioritas -->
-            <div class="mb-2">
-              <div class="small fw-bold text-uppercase text-muted mb-2"><i class="bi bi-list-check me-1"></i>Rekomendasi Prioritas</div>
-              <div id="result-actions-list">–</div>
-            </div>
-
-            <!-- Narasi Analisis Agent -->
-            <div class="mb-1" id="narrative-section" style="display:none">
-              <div class="d-flex justify-content-between align-items-center mb-1">
-                <div class="small fw-bold text-uppercase text-muted"><i class="bi bi-chat-left-text me-1"></i>Narasi Analisis Agent</div>
-                <button class="btn btn-link btn-sm p-0 text-muted" onclick="toggleNarrative()" id="narrative-toggle">
-                  <i class="bi bi-chevron-down"></i> Tampilkan
-                </button>
-              </div>
-              <div id="narrative-body" style="display:none">
-                <div id="narrative-content" class="narrative-box"></div>
-              </div>
-            </div>
-
-          </div>
-        </div>
-      </div>
+<!-- ═══ KPI CARDS ═══ -->
+<div class="kpi-grid mb-4">
+  <div class="kpi-card kpi-stations">
+    <div class="kpi-icon-wrap"><i class="bi bi-broadcast"></i></div>
+    <div class="kpi-info">
+      <div class="kpi-val" id="kpi-stations">–</div>
+      <div class="kpi-label">Stasiun Aktif</div>
     </div>
   </div>
-
-  <!-- Map + Station Table -->
-  <div class="row g-3 mb-3">
-    <div class="col-lg-6">
-      <div class="card border-0 shadow-sm h-100"><div class="card-body p-2">
-        <span class="section-title px-1"><i class="bi bi-map me-1"></i>Peta Stasiun</span>
-        <div id="map" class="mt-2"></div>
-      </div></div>
-    </div>
-    <div class="col-lg-6">
-      <div class="card border-0 shadow-sm h-100"><div class="card-body p-2">
-        <span class="section-title px-1"><i class="bi bi-table me-1"></i>Data Stasiun Onlimo</span>
-        <div style="max-height:380px;overflow-y:auto" class="mt-2">
-          <table class="table table-sm table-hover mb-0"><thead class="table-dark sticky-top"><tr><th>Stasiun</th><th>Status</th><th>Indeks</th><th>COD</th><th>BOD</th><th>DO</th><th>pH</th><th>TSS</th></tr></thead><tbody id="onlimo-body"><tr><td colspan="8" class="text-center text-muted">Memuat…</td></tr></tbody></table>
-        </div>
-      </div></div>
+  <div class="kpi-card kpi-critical">
+    <div class="kpi-icon-wrap"><i class="bi bi-exclamation-triangle-fill"></i></div>
+    <div class="kpi-info">
+      <div class="kpi-val" id="kpi-critical">–</div>
+      <div class="kpi-label">Cemar Berat</div>
     </div>
   </div>
-
-  <!-- BMKG + SPARING + SITALA charts -->
-  <div class="row g-3 mb-3">
-    <div class="col-lg-5"><div class="card border-0 shadow-sm"><div class="card-body">
-      <span class="section-title"><i class="bi bi-cloud-rain me-1"></i>Curah Hujan BMKG (24h)</span>
-      <div class="chart-wrap mt-2"><canvas id="bmkg-chart"></canvas></div>
-    </div></div></div>
-    <div class="col-lg-4"><div class="card border-0 shadow-sm"><div class="card-body">
-      <span class="section-title"><i class="bi bi-pie-chart me-1"></i>Ketaatan SPARING</span>
-      <div class="chart-wrap mt-2" style="height:200px"><canvas id="sparing-pie"></canvas></div>
-      <div class="text-center small text-muted" id="sparing-label"></div>
-    </div></div></div>
-    <div class="col-lg-3"><div class="card border-0 shadow-sm"><div class="card-body">
-      <span class="section-title"><i class="bi bi-bar-chart me-1"></i>IKA vs Target</span>
-      <div class="chart-wrap mt-2" style="height:200px"><canvas id="sitala-chart"></canvas></div>
-    </div></div></div>
+  <div class="kpi-card kpi-warning">
+    <div class="kpi-icon-wrap"><i class="bi bi-exclamation-circle-fill"></i></div>
+    <div class="kpi-info">
+      <div class="kpi-val" id="kpi-warning">–</div>
+      <div class="kpi-label">Cemar Sedang/Ringan</div>
+    </div>
   </div>
-
-  <!-- Violations + SITALA table -->
-  <div class="row g-3 mb-3">
-    <div class="col-lg-6"><div class="card border-0 shadow-sm"><div class="card-body p-2">
-      <span class="section-title px-1"><i class="bi bi-exclamation-octagon me-1"></i>Pelanggaran Baku Mutu</span>
-      <div style="max-height:200px;overflow-y:auto;margin-top:.4rem">
-        <table class="table table-sm table-hover mb-0"><thead class="table-danger sticky-top"><tr><th>Perusahaan</th><th>Parameter</th><th>Nilai</th><th>BM</th><th>%BM</th><th>Tanggal</th></tr></thead><tbody id="violation-body"><tr><td colspan="6" class="text-center text-muted">Memuat…</td></tr></tbody></table>
-      </div>
-    </div></div></div>
-    <div class="col-lg-6"><div class="card border-0 shadow-sm"><div class="card-body p-2">
-      <span class="section-title px-1"><i class="bi bi-award me-1"></i>IKA per Kabupaten</span>
-      <div style="max-height:200px;overflow-y:auto;margin-top:.4rem">
-        <table class="table table-sm table-hover mb-0"><thead class="table-primary sticky-top"><tr><th>Kab/Kota</th><th>IKA</th><th>Target</th><th>Gap</th><th>Urgensi</th></tr></thead><tbody id="sitala-body"><tr><td colspan="5" class="text-center text-muted">Memuat…</td></tr></tbody></table>
-      </div>
-    </div></div></div>
+  <div class="kpi-card kpi-good">
+    <div class="kpi-icon-wrap"><i class="bi bi-check-circle-fill"></i></div>
+    <div class="kpi-info">
+      <div class="kpi-val" id="kpi-good">–</div>
+      <div class="kpi-label">Memenuhi Baku Mutu</div>
+    </div>
   </div>
-
-  <!-- Anomaly Log -->
-  <div class="row g-3 mb-4">
-    <div class="col-12"><div class="card border-0 shadow-sm"><div class="card-body p-2">
-      <span class="section-title px-1"><i class="bi bi-journal-text me-1"></i>Log Anomali Terbaru</span>
-      <div style="max-height:200px;overflow-y:auto;margin-top:.4rem">
-        <table class="table table-sm table-hover mb-0"><thead class="table-secondary sticky-top"><tr><th>Waktu</th><th>Stasiun</th><th>Indeks</th><th>Profil</th><th>Urgensi</th><th>Rekomendasi</th></tr></thead><tbody id="anomaly-body"><tr><td colspan="6" class="text-center text-muted">Memuat…</td></tr></tbody></table>
-      </div>
-    </div></div></div>
+  <div class="kpi-card kpi-nostatus">
+    <div class="kpi-icon-wrap"><i class="bi bi-question-circle-fill"></i></div>
+    <div class="kpi-info">
+      <div class="kpi-val" id="kpi-nostatus">–</div>
+      <div class="kpi-label">Tidak Diketahui</div>
+    </div>
   </div>
-
+  <div class="kpi-card kpi-rain">
+    <div class="kpi-icon-wrap"><i class="bi bi-cloud-rain-fill"></i></div>
+    <div class="kpi-info">
+      <div class="kpi-val" id="kpi-rain">–</div>
+      <div class="kpi-label">Curah Hujan Maks</div>
+    </div>
+  </div>
 </div>
 
-<!-- Detail Reasoning Modal -->
-<div class="modal fade" id="detail-modal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content">
-  <div class="modal-header"><h6 class="modal-title"><i class="bi bi-file-text me-1"></i>Detail Reasoning</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
-  <div class="modal-body" id="detail-body"><p class="text-muted">Memuat…</p></div>
-</div></div></div>
+<!-- ═══ ANALYSIS SECTION ═══ -->
+<div class="row g-3 mb-4">
 
-<footer class="text-center py-3">WQSA Dashboard · DAS Citarum · Data: Onlimo KLHK, SPARING, SITALA, BMKG</footer>
+  <!-- Kolom Kiri: Controls + Live Log -->
+  <div class="col-xl-5">
+    <div class="section-card h-100 d-flex flex-column">
+      <div class="card-title-bar">
+        <div class="title"><i class="bi bi-robot"></i> Analisis Agent</div>
+        <div id="analysis-status" class="small text-muted d-flex align-items-center gap-1"></div>
+      </div>
+
+      <!-- Tombol Analisis -->
+      <div class="analysis-btn-group analysis-controls">
+        <button class="btn-analyze btn" id="btn-full-scan" onclick="startAnalysis('full_scan')">
+          <i class="bi bi-broadcast-pin"></i>Analisis Semua Stasiun
+        </button>
+        <div class="d-flex gap-1 align-items-center" style="width:100%;max-width:520px">
+          <select id="sel-station" class="form-select form-select-sm"
+            style="flex:1;min-width:0"><option value="">Pilih stasiun…</option></select>
+          <button class="btn btn-outline-primary btn-sm" style="border-radius:8px;white-space:nowrap;flex-shrink:0"
+            onclick="startAnalysis('station', _stationSelect ? _stationSelect.getValue() : '')">
+            <i class="bi bi-search me-1"></i>Analisis
+          </button>
+        </div>
+        <div class="input-group input-group-sm" style="max-width:250px">
+          <input type="text" class="form-control form-control-sm rounded-start"
+            id="inp-region" placeholder="Kecamatan / Kabupaten"
+            style="border-color:var(--border)">
+          <button class="btn btn-outline-primary btn-sm rounded-end"
+            onclick="startAnalysis('region', document.getElementById('inp-region').value)">
+            <i class="bi bi-geo-alt"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Log Header -->
+      <div class="d-flex justify-content-between align-items-center px-3 py-2"
+        style="background:#161b22; border-top:1px solid #30363d; border-bottom:1px solid #30363d;">
+        <span style="color:#8b949e; font-size:.72rem; font-family:monospace">
+          <i class="bi bi-terminal me-1"></i>LIVE AGENT LOG
+        </span>
+        <button class="btn btn-link btn-sm p-0" onclick="clearLog()"
+          style="color:#8b949e; font-size:.72rem">
+          <i class="bi bi-trash me-1"></i>Clear
+        </button>
+      </div>
+
+      <!-- Terminal -->
+      <div class="log-terminal flex-grow-1" id="log-panel">
+        <span class="log-line" style="color:#6e7681">— Waiting for analysis to start —</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Kolom Kanan: Hasil Analisis Agent -->
+  <div class="col-xl-7">
+    <div class="section-card h-100 d-flex flex-column">
+      <div class="card-title-bar">
+        <div class="title"><i class="bi bi-graph-up-arrow"></i> Hasil Analisis Agent</div>
+        <div class="d-flex gap-2" id="result-actions" style="display:none!important">
+          <button class="btn-analyze-outline btn btn-sm" onclick="showDetail()">
+            <i class="bi bi-file-text"></i>Detail
+          </button>
+          <button class="btn-analyze-outline btn btn-sm" onclick="sendTelegram()">
+            <i class="bi bi-send"></i>Telegram
+          </button>
+        </div>
+      </div>
+
+      <!-- Body -->
+      <div class="flex-grow-1 d-flex flex-column" style="overflow:hidden">
+
+        <!-- Placeholder -->
+        <div id="result-placeholder" class="result-placeholder flex-grow-1">
+          <i class="bi bi-bar-chart-line"></i>
+          <p>Klik tombol analisis untuk memulai.<br>
+            <span style="font-size:.78rem;color:var(--text-muted)">
+              Hasil analisis multi-agent akan ditampilkan di sini.
+            </span>
+          </p>
+        </div>
+
+        <!-- Loading -->
+        <div id="result-loading" class="loading-state flex-grow-1 d-none">
+          <div class="loading-spinner-wrap">
+            <i class="bi bi-cpu-fill"></i>
+          </div>
+          <div class="text-center">
+            <div class="fw-600" id="result-loading-text" style="font-weight:600">Agent sedang menganalisis…</div>
+            <div class="text-muted small mt-1" id="result-elapsed"></div>
+          </div>
+          <div class="d-flex gap-2 flex-wrap justify-content-center mt-1" style="font-size:.72rem;color:var(--text-muted)">
+            <span><i class="bi bi-1-circle me-1"></i>Evaluasi Data</span>
+            <span>→</span><span><i class="bi bi-2-circle me-1"></i>Analisis Anomali</span>
+            <span>→</span><span><i class="bi bi-3-circle me-1"></i>Validasi Laporan</span>
+          </div>
+        </div>
+
+        <!-- Content -->
+        <div id="result-content" class="d-none p-3 flex-grow-1 overflow-auto" style="max-height:500px">
+
+          <!-- Reliability Banner -->
+          <!-- injected dynamically -->
+
+          <!-- Top row: Urgency + IKA + DQ -->
+          <div class="row g-2 mb-3">
+            <div class="col-sm-5">
+              <div class="section-card p-3 h-100 text-center" id="result-urgency-card">
+                <div style="font-size:.68rem;font-weight:600;text-transform:uppercase;
+                  color:var(--text-muted);letter-spacing:.5px;margin-bottom:.5rem">Urgensi Keseluruhan</div>
+                <div style="font-size:2.2rem;line-height:1" id="result-urgency-icon">–</div>
+                <div class="fw-bold mt-1" style="font-size:1.1rem" id="result-urgency-text">–</div>
+                <div class="small text-muted mt-1" id="result-counts">–</div>
+              </div>
+            </div>
+            <div class="col-sm-7">
+              <div class="section-card p-3 h-100">
+                <div style="font-size:.68rem;font-weight:600;text-transform:uppercase;
+                  color:var(--text-muted);letter-spacing:.5px;margin-bottom:.6rem">
+                  Indeks Kualitas Air (IKA)
+                </div>
+                <div id="result-ika" class="small">–</div>
+                <hr class="my-2">
+                <div style="font-size:.68rem;font-weight:600;text-transform:uppercase;
+                  color:var(--text-muted);letter-spacing:.5px;margin-bottom:.4rem">
+                  Data Quality
+                </div>
+                <div id="result-dq" class="small">–</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Stasiun Anomali -->
+          <div class="mb-3">
+            <div class="d-flex align-items-center gap-2 mb-2">
+              <i class="bi bi-exclamation-triangle text-danger"></i>
+              <span style="font-size:.72rem;font-weight:700;text-transform:uppercase;
+                letter-spacing:.5px;color:var(--text-muted)">Stasiun Anomali</span>
+            </div>
+            <div id="result-stations"></div>
+          </div>
+
+          <!-- Rekomendasi -->
+          <div class="mb-2">
+            <div class="d-flex align-items-center gap-2 mb-2">
+              <i class="bi bi-list-check text-primary"></i>
+              <span style="font-size:.72rem;font-weight:700;text-transform:uppercase;
+                letter-spacing:.5px;color:var(--text-muted)">Rekomendasi Prioritas</span>
+            </div>
+            <div id="result-actions-list"></div>
+          </div>
+
+          <!-- Narasi -->
+          <div id="narrative-section" style="display:none">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <div class="d-flex align-items-center gap-2">
+                <i class="bi bi-chat-quote text-primary"></i>
+                <span style="font-size:.72rem;font-weight:700;text-transform:uppercase;
+                  letter-spacing:.5px;color:var(--text-muted)">Narasi Analisis Agent</span>
+              </div>
+              <button class="btn btn-link btn-sm p-0" onclick="toggleNarrative()"
+                id="narrative-toggle" style="font-size:.75rem">
+                <i class="bi bi-chevron-down"></i> Tampilkan
+              </button>
+            </div>
+            <div id="narrative-body" style="display:none">
+              <div id="narrative-content" class="narrative-box"></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MAP + STATION TABLE ═══ -->
+<div class="row g-3 mb-4">
+  <div class="col-lg-6">
+    <div class="section-card h-100">
+      <div class="card-title-bar">
+        <div class="title"><i class="bi bi-map"></i> Peta Stasiun</div>
+        <span style="font-size:.72rem;color:var(--text-muted)">Klik marker untuk detail</span>
+      </div>
+      <div id="map"></div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="section-card h-100 d-flex flex-column">
+      <div class="card-title-bar">
+        <div class="title"><i class="bi bi-table"></i> Data Stasiun Onlimo</div>
+        <span style="font-size:.72rem;color:var(--text-muted)" id="station-count-info"></span>
+      </div>
+      <div class="tbl-wrap" style="max-height:390px">
+        <table class="table data-table">
+          <thead>
+            <tr>
+              <th>Stasiun</th><th>Status</th><th>Indeks</th>
+              <th>COD</th><th>BOD</th><th>DO</th><th>pH</th><th>TSS</th>
+            </tr>
+          </thead>
+          <tbody id="onlimo-body">
+            <tr><td colspan="8" class="text-center text-muted py-4">
+              <span class="spinner-border spinner-border-sm me-2"></span>Memuat data stasiun…
+            </td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ CHARTS ROW ═══ -->
+<div class="row g-3 mb-4">
+  <div class="col-lg-5">
+    <div class="section-card">
+      <div class="card-title-bar">
+        <div class="title"><i class="bi bi-cloud-rain"></i> Curah Hujan BMKG (24h)</div>
+      </div>
+      <div class="chart-wrap" style="height:240px"><canvas id="bmkg-chart"></canvas></div>
+    </div>
+  </div>
+  <div class="col-lg-3">
+    <div class="section-card">
+      <div class="card-title-bar">
+        <div class="title"><i class="bi bi-pie-chart"></i> Ketaatan SPARING</div>
+      </div>
+      <div class="chart-wrap" style="height:180px"><canvas id="sparing-pie"></canvas></div>
+      <div class="text-center pb-2" style="font-size:.75rem;color:var(--text-muted)" id="sparing-label"></div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="section-card">
+      <div class="card-title-bar">
+        <div class="title"><i class="bi bi-bar-chart"></i> IKA vs Target</div>
+      </div>
+      <div class="chart-wrap" style="height:210px"><canvas id="sitala-chart"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ VIOLATIONS + SITALA ═══ -->
+<div class="row g-3 mb-4">
+  <div class="col-lg-6">
+    <div class="section-card d-flex flex-column">
+      <div class="card-title-bar">
+        <div class="title"><i class="bi bi-exclamation-octagon"></i> Pelanggaran Baku Mutu</div>
+      </div>
+      <div class="tbl-wrap" style="max-height:220px">
+        <table class="table data-table">
+          <thead style="background:#c0392b">
+            <tr><th>Perusahaan</th><th>Parameter</th><th>Nilai</th><th>BM</th><th>% BM</th><th>Tanggal</th></tr>
+          </thead>
+          <tbody id="violation-body">
+            <tr><td colspan="6" class="text-center py-3 text-muted">
+              <span class="spinner-border spinner-border-sm me-2"></span>Memuat…
+            </td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="section-card d-flex flex-column">
+      <div class="card-title-bar">
+        <div class="title"><i class="bi bi-award"></i> IKA per Kabupaten/Kota</div>
+      </div>
+      <div class="tbl-wrap" style="max-height:220px">
+        <table class="table data-table">
+          <thead>
+            <tr><th>Kab/Kota</th><th>IKA</th><th>Target</th><th>Gap</th><th>Status</th></tr>
+          </thead>
+          <tbody id="sitala-body">
+            <tr><td colspan="5" class="text-center py-3 text-muted">
+              <span class="spinner-border spinner-border-sm me-2"></span>Memuat…
+            </td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ ANOMALY LOG ═══ -->
+<div class="section-card mb-3">
+  <div class="card-title-bar">
+    <div class="title"><i class="bi bi-journal-text"></i> Log Anomali Terbaru</div>
+    <span style="font-size:.72rem;color:var(--text-muted)">30 entri terakhir</span>
+  </div>
+  <div class="tbl-wrap" style="max-height:220px">
+    <table class="table data-table">
+      <thead>
+        <tr><th>Waktu</th><th>Stasiun</th><th>Indeks</th><th>Profil</th><th>Urgensi</th><th>Rekomendasi</th></tr>
+      </thead>
+      <tbody id="anomaly-body">
+        <tr><td colspan="6" class="text-center py-3 text-muted">
+          <span class="spinner-border spinner-border-sm me-2"></span>Memuat…
+        </td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+</div><!-- end page-wrapper -->
+
+<!-- ═══ DETAIL MODAL ═══ -->
+<div class="modal fade" id="detail-modal" tabindex="-1">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title fw-bold">
+          <i class="bi bi-file-earmark-text me-2"></i>Detail Reasoning
+        </h6>
+        <button class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="detail-body">
+        <p class="text-muted">Memuat…</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <i class="bi bi-water me-1" style="color:var(--accent)"></i>
+  WQSA Dashboard v2 &nbsp;·&nbsp; DAS Citarum &nbsp;·&nbsp;
+  Data: Onlimo KLHK · SPARING · SITALA · BMKG
+</footer>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
 
 <script>
+// ── State ─────────────────────────────────────────────────────────────
 let bmkgChart=null, sparingPie=null, sitalaChart=null;
 let _currentJobId=null, _pollTimer=null, _logTimer=null;
-let _logOffset=0, _logRunning=false, _analysisStart=0, _elapsedTimer=null;
+let _logOffset=0, _analysisStart=0, _elapsedTimer=null;
+let _narrativeVisible=false;
+let _stationSelect=null;   // Tom Select instance
 
-const map = L.map('map').setView([-6.9,107.6],9);
+// ── Map ───────────────────────────────────────────────────────────────
+const map=L.map('map').setView([-6.9,107.6],9);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OSM'}).addTo(map);
 const markers={};
 
+// ── Helpers ───────────────────────────────────────────────────────────
 function fmt(v,d=1){return v==null||isNaN(v)?'–':Number(v).toFixed(d)}
 function uc(u){return u==='TINDAK'?'urgency-TINDAK':u==='WASPADA'?'urgency-WASPADA':'urgency-PANTAU'}
 function sd(s){return s?(s+'').replace('T',' ').slice(0,16):'–'}
-function mc(w){if(!w)return'#6c757d';const u=w.toUpperCase();return u==='MERAH'?'#dc3545':u==='KUNING'?'#ffc107':u==='HIJAU'?'#198754':'#6c757d'}
-function mkIcon(c){return L.divIcon({className:'',html:`<div style="width:12px;height:12px;border-radius:50%;background:${c};border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4)"></div>`,iconSize:[12,12],iconAnchor:[6,6]})}
-
-// ── Log Panel ─────────────────────────────────────────────────────────────
-function classifyLog(line){
-  if(/\[Phase [12]\]/.test(line)||/CHAIN (START|COMPLETE)/.test(line)) return 'phase';
-  if(/LLM (call|responded)/.test(line)) return 'llm';
-  if(/Step \d+/.test(line)) return 'step';
-  if(/(COMPLETE|DONE|ACCEPTED|CHAIN COMPLETE)/.test(line)) return 'done';
-  if(/FAIL|ERROR|error/.test(line)) return 'err';
-  return '';
+function mc(w,mutu){
+  if(w){
+    const u=w.toUpperCase().replace('#','');
+    if(u==='FC0004'||u==='MERAH') return'#e74c3c';
+    if(u==='FDF92F'||u==='KUNING') return'#f39c12';
+    if(u==='02AE4E'||u==='HIJAU') return'#0ead69';
+    if(u==='4F81BC') return'#4f81bc';
+    if(/^[0-9A-F]{6}$/.test(u)) return'#'+u;
+  }
+  if(mutu){
+    const m=mutu.toUpperCase();
+    if(m.includes('CEMAR BERAT')) return'#e74c3c';
+    if(m.includes('CEMAR SEDANG')) return'#f39c12';
+    if(m.includes('CEMAR RINGAN')) return'#4f81bc';
+    if(m.includes('MEMENUHI')||m.includes('BAIK')) return'#0ead69';
+  }
+  return'#6c757d';
 }
+function mkIcon(c){
+  return L.divIcon({className:'',
+    html:`<div style="width:13px;height:13px;border-radius:50%;background:${c};
+      border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5)"></div>`,
+    iconSize:[13,13],iconAnchor:[6,6]});
+}
+function urgencyEmoji(u){return u==='TINDAK'?'🔴':u==='WASPADA'?'🟡':'🟢'}
+function urgencyBadgeClass(u){return u==='TINDAK'?'bg-danger':u==='WASPADA'?'bg-warning text-dark':'bg-success'}
+function urgencyChipClass(u){return u==='TINDAK'?'TINDAK':u==='WASPADA'?'WASPADA':'PANTAU'}
 
+// Clock
+setInterval(()=>{
+  document.getElementById('clock').textContent=new Date().toLocaleTimeString('id-ID');
+},1000);
+
+// ── Log Panel ─────────────────────────────────────────────────────────
+function classifyLog(l){
+  if(/\[Phase [12]\]|CHAIN (START|COMPLETE)/.test(l)) return'phase';
+  if(/LLM (call|responded)/.test(l)) return'llm';
+  if(/Step \d+/.test(l)) return'step';
+  if(/(COMPLETE|DONE|ACCEPTED|CHAIN COMPLETE)/.test(l)) return'done';
+  if(/FAIL|ERROR/.test(l)) return'err';
+  return'';
+}
 function appendLog(lines){
-  const panel = document.getElementById('log-panel');
-  const wasBottom = panel.scrollHeight - panel.scrollTop - panel.clientHeight < 40;
-  lines.forEach(line => {
-    const div = document.createElement('div');
-    div.className = 'log-line ' + classifyLog(line);
-    div.textContent = line;
-    panel.appendChild(div);
+  const p=document.getElementById('log-panel');
+  const atBot=p.scrollHeight-p.scrollTop-p.clientHeight<40;
+  lines.forEach(l=>{
+    const d=document.createElement('div');
+    d.className='log-line '+classifyLog(l);
+    d.textContent=l; p.appendChild(d);
   });
-  if(wasBottom) panel.scrollTop = panel.scrollHeight;
+  if(atBot) p.scrollTop=p.scrollHeight;
 }
-
 function clearLog(){
-  document.getElementById('log-panel').innerHTML = '<span class="log-line" style="color:#6e7681">— Log dibersihkan —</span>';
-  _logOffset = 0;
+  document.getElementById('log-panel').innerHTML=
+    '<span class="log-line" style="color:#6e7681">— Log cleared —</span>';
+  _logOffset=0;
 }
-
 async function fetchLog(){
   try{
-    const r = await fetch('/api/log?offset='+_logOffset);
-    const d = await r.json();
-    if(d.lines && d.lines.length){
-      appendLog(d.lines);
-      _logOffset = d.total;
-    }
+    const r=await fetch('/api/log?offset='+_logOffset);
+    const d=await r.json();
+    if(d.lines&&d.lines.length){appendLog(d.lines);_logOffset=d.total;}
   }catch(e){}
 }
-
-function startLogPolling(){
-  _logRunning = true;
-  _logTimer = setInterval(fetchLog, 1500);
-}
-
+function startLogPolling(){_logTimer=setInterval(fetchLog,1500);}
 function stopLogPolling(){
-  _logRunning = false;
-  if(_logTimer){ clearInterval(_logTimer); _logTimer=null; }
-  fetchLog(); // fetch sisa log
+  if(_logTimer){clearInterval(_logTimer);_logTimer=null;}
+  fetchLog();
 }
 
-// ── Elapsed timer ────────────────────────────────────────────────────────
+// ── Elapsed ───────────────────────────────────────────────────────────
 function startElapsed(){
-  _analysisStart = Date.now();
-  _elapsedTimer = setInterval(()=>{
-    const sec = Math.floor((Date.now()-_analysisStart)/1000);
-    const m = Math.floor(sec/60), s = sec%60;
-    document.getElementById('result-elapsed').textContent = `Waktu berjalan: ${m}m ${s}s`;
-  }, 1000);
+  _analysisStart=Date.now();
+  _elapsedTimer=setInterval(()=>{
+    const s=Math.floor((Date.now()-_analysisStart)/1000);
+    document.getElementById('result-elapsed').textContent=
+      `Waktu berjalan: ${Math.floor(s/60)}m ${s%60}s`;
+  },1000);
 }
-function stopElapsed(){ if(_elapsedTimer){ clearInterval(_elapsedTimer); _elapsedTimer=null; } }
+function stopElapsed(){if(_elapsedTimer){clearInterval(_elapsedTimer);_elapsedTimer=null;}}
 
-// ── Data loaders ──────────────────────────────────────────────────────────
+// ── Data Loaders ──────────────────────────────────────────────────────
 async function loadSummary(){
-  try{const r=await fetch('/api/summary');const d=await r.json();
-  document.getElementById('kpi-stations').textContent=d.total_stations??'–';
-  document.getElementById('kpi-critical').textContent=d.critical??'–';
-  document.getElementById('kpi-warning').textContent=d.warning??'–';
-  document.getElementById('kpi-good').textContent=d.good??'–';
-  document.getElementById('kpi-rain').textContent=d.max_rainfall_mm??'–';
-  document.getElementById('kpi-langgar').textContent=d.sparing_langgar??'–';
-  document.getElementById('last-refresh').textContent='Update: '+new Date().toLocaleTimeString('id-ID');
-  }catch(e){console.error('summary',e)}
+  try{
+    const d=await(await fetch('/api/summary')).json();
+    document.getElementById('kpi-stations').textContent=d.total_stations??'–';
+    document.getElementById('kpi-critical').textContent=d.critical??'–';
+    document.getElementById('kpi-warning').textContent=d.warning??'–';
+    document.getElementById('kpi-good').textContent=d.good??'–';
+    document.getElementById('kpi-nostatus').textContent=d.no_status??'–';
+    document.getElementById('kpi-rain').textContent=d.max_rainfall_mm!=null?fmt(d.max_rainfall_mm,1)+'mm':'–';
+    document.getElementById('last-refresh').textContent='Update '+new Date().toLocaleTimeString('id-ID');
+  }catch(e){console.error(e)}
 }
 
 async function loadOnlimo(){
-  try{const r=await fetch('/api/onlimo');const rows=await r.json();if(rows.error)return;
-  document.getElementById('onlimo-body').innerHTML=rows.map(s=>{
-    const c=mc(s.status_warna);
-    return`<tr style="cursor:pointer" onclick="map.setView([${s.latitude||0},${s.longitude||0}],13)">
-      <td><b>${s.station_id}</b><br><small class="text-muted">${s.station_name||''}</small></td>
-      <td><span style="color:${c};font-weight:600">${s.status||'–'}</span></td>
-      <td>${fmt(s.indeks_mutu,2)}</td><td>${fmt(s.cod)}</td><td>${fmt(s.bod)}</td>
-      <td>${fmt(s.do)}</td><td>${fmt(s.ph)}</td><td>${fmt(s.tss)}</td></tr>`
-  }).join('')||'<tr><td colspan="8" class="text-center text-muted">Tidak ada data</td></tr>';
-  Object.values(markers).forEach(m=>map.removeLayer(m));
-  rows.forEach(s=>{if(!s.latitude||!s.longitude)return;
-    const m=L.marker([s.latitude,s.longitude],{icon:mkIcon(mc(s.status_warna))}).addTo(map)
-      .bindPopup(`<b>${s.station_id}</b> — ${s.station_name}<br>Status: <b>${s.status}</b><br>Indeks: ${fmt(s.indeks_mutu,2)}`);
-    markers[s.station_id]=m;
-  });
-  const sel=document.getElementById('sel-station');
-  const cur=sel.value;
-  sel.innerHTML='<option value="">Pilih stasiun…</option>'+rows.map(s=>`<option value="${s.station_id}">${s.station_id} — ${s.station_name||''}</option>`).join('');
-  if(cur)sel.value=cur;
-  }catch(e){console.error('onlimo',e)}
+  try{
+    const rows=await(await fetch('/api/onlimo')).json();
+    if(rows.error)return;
+    const el=document.getElementById('station-count-info');
+    if(el) el.textContent=rows.length+' stasiun';
+    document.getElementById('onlimo-body').innerHTML=rows.map(s=>{
+      const c=mc(s.status_warna,s.status);
+      const badge=s.status?`<span style="color:${c};font-weight:600;font-size:.75rem">${s.status}</span>`:'–';
+      return`<tr style="cursor:pointer" onclick="map.setView([${s.latitude||0},${s.longitude||0}],13)">
+        <td><b style="font-size:.8rem">${s.station_id}</b><br>
+          <span style="font-size:.7rem;color:var(--text-muted)">${s.station_name||''}</span></td>
+        <td>${badge}</td>
+        <td><b>${fmt(s.indeks_mutu,2)}</b></td>
+        <td>${fmt(s.cod)}</td><td>${fmt(s.bod)}</td>
+        <td>${fmt(s.do)}</td><td>${fmt(s.ph)}</td><td>${fmt(s.tss)}</td>
+      </tr>`;
+    }).join('')||'<tr><td colspan="8" class="text-center py-3 text-muted">Tidak ada data</td></tr>';
+
+    Object.values(markers).forEach(m=>map.removeLayer(m));
+    rows.forEach(s=>{
+      if(!s.latitude||!s.longitude)return;
+      const c=mc(s.status_warna,s.status);
+      const m=L.marker([s.latitude,s.longitude],{icon:mkIcon(c)}).addTo(map)
+        .bindPopup(`<b>${s.station_id}</b> — ${s.station_name||''}<br>
+          Status: <b style="color:${c}">${s.status||'–'}</b><br>
+          Indeks: <b>${fmt(s.indeks_mutu,2)}</b> | COD: ${fmt(s.cod)} | BOD: ${fmt(s.bod)}`);
+      markers[s.station_id]=m;
+    });
+    // Update Tom Select dengan opsi baru
+    const curVal = _stationSelect ? _stationSelect.getValue() : '';
+    if(_stationSelect){
+      _stationSelect.clearOptions();
+    }else{
+      _stationSelect = new TomSelect('#sel-station',{
+        placeholder: 'Cari ID atau nama stasiun…',
+        allowEmptyOption: true,
+        maxOptions: 500,
+        searchField: ['text','value'],
+        render: {
+          option: (data) => {
+            const parts = data.text.split(' — ');
+            const id = parts[0] || data.value;
+            const name = parts.slice(1).join(' — ') || '';
+            return `<div><span class="station-opt-id">${id}</span><span class="station-opt-name">${name}</span></div>`;
+          },
+          item: (data) => `<div>${data.text}</div>`,
+        },
+      });
+    }
+    _stationSelect.addOption({value:'', text:'Pilih stasiun…'});
+    rows.forEach(s=>{
+      _stationSelect.addOption({
+        value: s.station_id,
+        text: `${s.station_id} — ${s.station_name||''}`,
+      });
+    });
+    _stationSelect.refreshOptions(false);
+    if(curVal) _stationSelect.setValue(curVal, true);
+  }catch(e){console.error(e)}
 }
 
 async function loadBmkg(){
-  try{const r=await fetch('/api/bmkg');const rows=await r.json();if(!rows.length)return;
-  const ctx=document.getElementById('bmkg-chart').getContext('2d');
-  if(bmkgChart)bmkgChart.destroy();
-  bmkgChart=new Chart(ctx,{type:'bar',data:{labels:rows.map(r=>r.location||'?'),datasets:[{label:'mm/24h',data:rows.map(r=>r.total_rainfall_mm),backgroundColor:rows.map(r=>r.is_high_rainfall?'rgba(220,53,69,.8)':'rgba(13,202,240,.7)'),borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true},x:{ticks:{maxRotation:45,font:{size:9}}}}}});
-  }catch(e){console.error('bmkg',e)}
+  try{
+    const rows=await(await fetch('/api/bmkg')).json();
+    if(!rows.length)return;
+    const ctx=document.getElementById('bmkg-chart').getContext('2d');
+    if(bmkgChart)bmkgChart.destroy();
+    bmkgChart=new Chart(ctx,{type:'bar',data:{
+      labels:rows.map(r=>r.location||'?'),
+      datasets:[{label:'mm/24h',data:rows.map(r=>r.total_rainfall_mm),
+        backgroundColor:rows.map(r=>r.is_high_rainfall?'rgba(230,57,70,.75)':'rgba(0,180,216,.65)'),
+        borderRadius:5,borderSkipped:false}]
+    },options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.parsed.y.toFixed(1)+' mm'}}},
+      scales:{y:{beginAtZero:true,grid:{color:'#f1f5f9'},ticks:{font:{size:9}}},
+        x:{grid:{display:false},ticks:{maxRotation:40,font:{size:8}}}}}});
+  }catch(e){console.error(e)}
 }
 
 async function loadSparing(){
-  try{const r=await fetch('/api/sparing');const d=await r.json();if(d.error)return;
-  const t=d.summary.taat,l=d.summary.langgar;
-  document.getElementById('sparing-label').textContent=`${t} Taat / ${l} Langgar`;
-  const ctx=document.getElementById('sparing-pie').getContext('2d');
-  if(sparingPie)sparingPie.destroy();
-  sparingPie=new Chart(ctx,{type:'doughnut',data:{labels:['TAAT','LANGGAR'],datasets:[{data:[t,l],backgroundColor:['#198754','#dc3545'],borderWidth:1}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:10}}}}}});
-  document.getElementById('violation-body').innerHTML=d.violations.map(v=>
-    `<tr><td title="${v.company_name}">${(v.company_name||'').slice(0,22)}</td><td>${v.parameter}</td><td>${fmt(v.value,2)}</td><td>${fmt(v.baku_mutu,2)}</td><td class="text-danger fw-bold">${fmt(v.pct_of_bm,0)}%</td><td>${sd(v.reported_at)}</td></tr>`
-  ).join('')||'<tr><td colspan="6" class="text-center text-success">Tidak ada pelanggaran</td></tr>';
-  }catch(e){console.error('sparing',e)}
+  try{
+    const d=await(await fetch('/api/sparing')).json();
+    if(d.error)return;
+    const t=d.summary.taat,l=d.summary.langgar;
+    document.getElementById('sparing-label').textContent=`${t} Taat / ${l} Langgar`;
+    const ctx=document.getElementById('sparing-pie').getContext('2d');
+    if(sparingPie)sparingPie.destroy();
+    sparingPie=new Chart(ctx,{type:'doughnut',data:{
+      labels:['TAAT','LANGGAR'],
+      datasets:[{data:[t,l],backgroundColor:['#0ead69','#e63946'],borderWidth:2,borderColor:'#fff'}]
+    },options:{responsive:true,maintainAspectRatio:false,cutout:'65%',
+      plugins:{legend:{position:'bottom',labels:{font:{size:10},padding:8}}}}});
+
+    document.getElementById('violation-body').innerHTML=d.violations.length
+      ? d.violations.map(v=>`
+        <tr>
+          <td title="${v.company_name}" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+            <b>${(v.company_name||'').slice(0,20)}</b>
+          </td>
+          <td><span class="badge bg-secondary badge-status">${v.parameter}</span></td>
+          <td><b>${fmt(v.value,2)}</b></td>
+          <td class="text-muted">${fmt(v.baku_mutu,2)}</td>
+          <td><span class="badge bg-danger badge-status">${fmt(v.pct_of_bm,0)}%</span></td>
+          <td style="font-size:.72rem;color:var(--text-muted)">${sd(v.reported_at)}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="6" class="text-center py-3" style="color:var(--green)"><i class="bi bi-check-circle me-1"></i>Tidak ada pelanggaran</td></tr>';
+  }catch(e){console.error(e)}
 }
 
 async function loadSitala(){
-  try{const r=await fetch('/api/sitala');const rows=await r.json();if(!rows.length)return;
-  const sl=rows.slice(0,12);
-  const ctx=document.getElementById('sitala-chart').getContext('2d');
-  if(sitalaChart)sitalaChart.destroy();
-  sitalaChart=new Chart(ctx,{type:'bar',data:{labels:sl.map(r=>(r.kabkot||'').replace('Kab. ','').slice(0,10)),datasets:[{label:'IKA',data:sl.map(r=>r.ika),backgroundColor:'rgba(13,110,253,.7)',borderRadius:3},{label:'Target',data:sl.map(r=>r.target_ika),backgroundColor:'rgba(253,126,20,.6)',borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:9}}}},scales:{y:{beginAtZero:false}}}});
-  document.getElementById('sitala-body').innerHTML=rows.map(s=>
-    `<tr><td>${s.kabkot||'–'}</td><td>${fmt(s.ika,2)}</td><td>${fmt(s.target_ika,2)}</td><td class="${s.gap_ika<-7?'text-danger fw-bold':s.gap_ika<-3?'text-warning fw-bold':'text-success'}">${fmt(s.gap_ika,2)}</td><td class="${uc(s.urgency)}">${s.urgency||'–'}</td></tr>`
-  ).join('');
-  }catch(e){console.error('sitala',e)}
+  try{
+    const rows=await(await fetch('/api/sitala')).json();
+    if(!rows.length)return;
+    const sl=rows.slice(0,12);
+    const ctx=document.getElementById('sitala-chart').getContext('2d');
+    if(sitalaChart)sitalaChart.destroy();
+    sitalaChart=new Chart(ctx,{type:'bar',data:{
+      labels:sl.map(r=>(r.kabkot||'').replace(/Kab\. |Kota /,'').slice(0,9)),
+      datasets:[
+        {label:'IKA',data:sl.map(r=>r.ika),backgroundColor:'rgba(29,111,164,.75)',borderRadius:3},
+        {label:'Target',data:sl.map(r=>r.target_ika),backgroundColor:'rgba(244,162,97,.75)',borderRadius:3}
+      ]
+    },options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{position:'bottom',labels:{font:{size:9},padding:6}}},
+      scales:{y:{grid:{color:'#f1f5f9'},ticks:{font:{size:9}}},
+        x:{grid:{display:false},ticks:{font:{size:8}}}}}});
+
+    document.getElementById('sitala-body').innerHTML=rows.map(s=>{
+      const gapClass=s.gap_ika<-7?'text-danger fw-bold':s.gap_ika<-3?'text-warning fw-bold':'text-success';
+      const chip=`<span class="urgency-chip ${urgencyChipClass(s.urgency)}" style="font-size:.65rem;padding:2px 8px">${s.urgency||'–'}</span>`;
+      return`<tr>
+        <td><b style="font-size:.78rem">${s.kabkot||'–'}</b></td>
+        <td><b>${fmt(s.ika,2)}</b></td>
+        <td class="text-muted">${fmt(s.target_ika,2)}</td>
+        <td class="${gapClass}">${fmt(s.gap_ika,2)}</td>
+        <td>${chip}</td>
+      </tr>`;
+    }).join('');
+  }catch(e){console.error(e)}
 }
 
 async function loadAnomalyLog(){
-  try{const r=await fetch('/api/anomaly_log');const rows=await r.json();
-  document.getElementById('anomaly-body').innerHTML=rows.map(a=>
-    `<tr><td>${sd(a.logged_at)}</td><td><b>${a.station_id||'–'}</b></td><td>${fmt(a.indeks_mutu,2)}</td><td>${a.pollution_profile||'–'}</td><td class="${uc(a.urgency_level)}">${a.urgency_level||'–'}</td><td class="text-muted" style="max-width:250px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${(a.recommendation||'–').slice(0,150)}</td></tr>`
-  ).join('')||'<tr><td colspan="6" class="text-center text-muted">Belum ada</td></tr>';
-  }catch(e){console.error('log',e)}
+  try{
+    const rows=await(await fetch('/api/anomaly_log')).json();
+    document.getElementById('anomaly-body').innerHTML=rows.length
+      ? rows.map(a=>{
+          const urgColor=a.urgency_level==='TINDAK'?'#e74c3c':a.urgency_level==='WASPADA'?'#f39c12':'#0ead69';
+          return`<tr>
+            <td style="font-size:.72rem;white-space:nowrap;color:var(--text-muted)">${sd(a.logged_at)}</td>
+            <td><b style="color:var(--blue)">${a.station_id||'–'}</b></td>
+            <td><b>${fmt(a.indeks_mutu,2)}</b></td>
+            <td><span class="badge bg-secondary badge-status">${a.pollution_profile||'–'}</span></td>
+            <td><span style="color:${urgColor};font-weight:700;font-size:.75rem">${a.urgency_level||'–'}</span></td>
+            <td style="max-width:220px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
+              font-size:.72rem;color:var(--text-muted)" title="${a.recommendation||''}">
+              ${(a.recommendation||'–').slice(0,120)}
+            </td>
+          </tr>`;
+        }).join('')
+      : '<tr><td colspan="6" class="text-center py-3 text-muted">Belum ada log anomali</td></tr>';
+  }catch(e){console.error(e)}
 }
 
-// ── Analysis ──────────────────────────────────────────────────────────────
-async function startAnalysis(type, target=''){
+// ── Analysis ──────────────────────────────────────────────────────────
+async function startAnalysis(type,target=''){
   if(type==='station'&&!target){alert('Pilih stasiun terlebih dahulu');return}
   if(type==='region'&&!target){alert('Isi nama wilayah terlebih dahulu');return}
 
-  // Reset UI
-  const btns=document.querySelectorAll('.analysis-controls button');
-  btns.forEach(b=>{b.disabled=true});
-  document.getElementById('analysis-status').innerHTML='<span class="spinner-border spinner-border-sm me-1"></span>Analisis berjalan…';
+  const btns=document.querySelectorAll('.analysis-controls button,.analysis-controls input');
+  btns.forEach(b=>b.disabled=true);
+  if(_stationSelect) _stationSelect.disable();
+  document.getElementById('analysis-status').innerHTML=
+    '<span class="spinner-border spinner-border-sm me-1" style="width:.8rem;height:.8rem"></span>Analisis berjalan…';
 
-  // Show loading state on result panel
   document.getElementById('result-placeholder').classList.add('d-none');
   document.getElementById('result-content').classList.add('d-none');
   document.getElementById('result-loading').classList.remove('d-none');
@@ -480,298 +1025,273 @@ async function startAnalysis(type, target=''){
     type==='station'?`Menganalisis stasiun ${target}…`:
     `Menganalisis wilayah ${target}…`;
 
-  // Start elapsed + log
   stopElapsed(); startElapsed();
   startLogPolling();
 
   try{
-    const res=await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type,target})});
+    const res=await fetch('/api/analyze',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({type,target})});
     const{job_id}=await res.json();
     _currentJobId=job_id;
     if(_pollTimer)clearInterval(_pollTimer);
     _pollTimer=setInterval(()=>pollAnalysis(job_id,btns),3000);
   }catch(e){
     document.getElementById('analysis-status').textContent='Error: '+e.message;
-    btns.forEach(b=>{b.disabled=false});
+    btns.forEach(b=>b.disabled=false);
     stopElapsed(); stopLogPolling();
     document.getElementById('result-loading').classList.add('d-none');
     document.getElementById('result-placeholder').classList.remove('d-none');
   }
 }
 
-async function pollAnalysis(jobId, btns){
+async function pollAnalysis(jobId,btns){
   try{
-    const r=await fetch('/api/analyze/'+jobId);
-    const d=await r.json();
-
+    const d=await(await fetch('/api/analyze/'+jobId)).json();
     if(d.status==='done'){
       clearInterval(_pollTimer);_pollTimer=null;
-      btns.forEach(b=>{b.disabled=false});
+      btns.forEach(b=>b.disabled=false);
+      if(_stationSelect) _stationSelect.enable();
       stopElapsed(); stopLogPolling();
-
-      const elapsed = Math.floor((Date.now()-_analysisStart)/1000);
-      const m=Math.floor(elapsed/60), s=elapsed%60;
-      document.getElementById('analysis-status').textContent=`Selesai dalam ${m}m ${s}s`;
-
+      const s=Math.floor((Date.now()-_analysisStart)/1000);
+      document.getElementById('analysis-status').innerHTML=
+        `<i class="bi bi-check-circle text-success me-1"></i>Selesai dalam ${Math.floor(s/60)}m ${s%60}s`;
       renderResult(d.result);
       loadSummary();loadOnlimo();loadBmkg();loadSparing();loadSitala();loadAnomalyLog();
-
     }else if(d.status==='error'){
       clearInterval(_pollTimer);_pollTimer=null;
-      btns.forEach(b=>{b.disabled=false});
+      btns.forEach(b=>b.disabled=false);
+      if(_stationSelect) _stationSelect.enable();
       stopElapsed(); stopLogPolling();
-      document.getElementById('analysis-status').textContent='Error: '+(d.error||'unknown');
+      document.getElementById('analysis-status').innerHTML=
+        `<i class="bi bi-x-circle text-danger me-1"></i>Error: ${d.error||'unknown'}`;
       document.getElementById('result-loading').classList.add('d-none');
       document.getElementById('result-placeholder').classList.remove('d-none');
-      appendLog(['[ERROR] '+( d.error||'unknown error')]);
+      appendLog(['[ERROR] '+(d.error||'unknown')]);
     }else{
-      const sec = Math.floor((Date.now()-_analysisStart)/1000);
+      const s=Math.floor((Date.now()-_analysisStart)/1000);
       document.getElementById('analysis-status').innerHTML=
-        `<span class="spinner-border spinner-border-sm me-1"></span>${d.status} (${sec}s)…`;
+        `<span class="spinner-border spinner-border-sm me-1" style="width:.8rem;height:.8rem"></span>${d.status} (${s}s)…`;
     }
-  }catch(e){console.error('poll',e)}
+  }catch(e){console.error(e)}
 }
 
-// ── Render Hasil Analisis Agent ───────────────────────────────────────────
-function urgencyEmoji(u){
-  return u==='TINDAK'?'🔴':u==='WASPADA'?'🟡':'🟢';
-}
-function urgencyBadgeClass(u){
-  return u==='TINDAK'?'bg-danger':u==='WASPADA'?'bg-warning text-dark':'bg-success';
-}
-
+// ── Render Result ─────────────────────────────────────────────────────
 function renderResult(result){
   document.getElementById('result-loading').classList.add('d-none');
+  // remove old banners
+  document.querySelectorAll('.reliability-banner').forEach(e=>e.remove());
 
-  if(!result){
-    document.getElementById('result-placeholder').classList.remove('d-none');
-    return;
-  }
-
+  if(!result){document.getElementById('result-placeholder').classList.remove('d-none');return}
   if(result.status==='no_data'){
     document.getElementById('result-placeholder').innerHTML=
-      `<i class="bi bi-database-x" style="font-size:3rem;opacity:.3"></i><p class="mt-2 text-muted">${result.message||'Tidak ada data'}</p>`;
+      `<i class="bi bi-database-x" style="font-size:3rem;opacity:.25"></i>
+      <p>${result.message||'Tidak ada data'}</p>`;
     document.getElementById('result-placeholder').classList.remove('d-none');
     return;
   }
 
-  const hl  = result.analysis_highlight || {};
-  const dq  = result.data_quality || {};
-  const ika = result.ika_summary || {};
-  const rel = result.data_reliability || { is_reliable: true, level: 'OK' };
+  const hl=result.analysis_highlight||{};
+  const dq=result.data_quality||{};
+  const ika=result.ika_summary||{};
+  const rel=result.data_reliability||{is_reliable:true,level:'OK'};
 
-  // ── Reliability Banner ──────────────────────────────────────────────────
-  let bannerHtml = '';
-  if (rel.level === 'SENSOR_FAILURE') {
-    bannerHtml = `<div class="reliability-banner reliability-SENSOR_FAILURE">
-      <b>⚠️ FALSE POSITIVE — SENSOR/TELEMETRY FAILURE</b><br>
-      ${rel.warning || ''}
-      ${rel.dead_stations && rel.dead_stations.length
-        ? `<br><small>Stasiun tanpa data: <b>${rel.dead_stations.join(', ')}</b></small>` : ''}
-    </div>`;
-  } else if (rel.level === 'NO_DATA') {
-    bannerHtml = `<div class="reliability-banner reliability-NO_DATA">
-      <b>🚫 DATA TIDAK TERSEDIA</b><br>${rel.warning || ''}
-    </div>`;
-  } else if (rel.level === 'LOW_QUALITY') {
-    bannerHtml = `<div class="reliability-banner reliability-LOW_QUALITY">
-      <b>⚠️ KUALITAS DATA RENDAH</b><br>${rel.warning || ''}
-    </div>`;
+  // Reliability Banner
+  if(rel.level!=='OK'){
+    const iconMap={SENSOR_FAILURE:'bi-broadcast-pin',NO_DATA:'bi-database-x',LOW_QUALITY:'bi-graph-down'};
+    const banner=document.createElement('div');
+    banner.className='reliability-banner reliability-'+rel.level;
+    banner.innerHTML=`<i class="bi ${iconMap[rel.level]||'bi-exclamation-triangle'}" style="font-size:1.1rem;flex-shrink:0;margin-top:1px"></i>
+      <div><b>${rel.level==='SENSOR_FAILURE'?'FALSE POSITIVE — SENSOR/TELEMETRY FAILURE':
+        rel.level==='NO_DATA'?'DATA TIDAK TERSEDIA':'KUALITAS DATA RENDAH'}</b><br>
+      <span style="font-size:.78rem">${rel.warning||''}</span>
+      ${rel.dead_stations&&rel.dead_stations.length?`<br><small>Stasiun tanpa data: <b>${rel.dead_stations.join(', ')}</b></small>`:''}
+      </div>`;
+    document.getElementById('result-content').prepend(banner);
   }
-  document.getElementById('result-content').insertAdjacentHTML('afterbegin',
-    bannerHtml ? bannerHtml : '');
 
-  // ── Urgency Card ────────────────────────────────────────────────────────
-  const urg = hl.overall_urgency || 'PANTAU';
-  const urgCard = document.getElementById('result-urgency-card');
-
-  if (!rel.is_reliable && urg === 'PANTAU') {
-    // False positive: tampilkan abu-abu dengan label DATA TIDAK VALID
-    urgCard.className = 'card text-center p-3 h-100 urgency-card-unreliable';
-    document.getElementById('result-urgency-icon').textContent = '⚫';
-    document.getElementById('result-urgency-text').innerHTML =
-      `<span style="font-size:.9rem">DATA<br>TIDAK VALID</span>`;
-    document.getElementById('result-counts').textContent =
-      `Bukan genuine PANTAU — ${rel.level.replace('_',' ')}`;
-  } else if (!rel.is_reliable) {
-    // Anomali terdeteksi tapi data juga bermasalah — tampilkan urg + warning stripe
-    urgCard.className = `card text-center p-3 h-100 ${urg==='TINDAK'?'bg-danger text-white':'bg-warning'}`;
-    document.getElementById('result-urgency-icon').textContent = urgencyEmoji(urg) + ' ⚠️';
-    document.getElementById('result-urgency-text').textContent = urg + ' (data tidak lengkap)';
-    document.getElementById('result-counts').textContent =
-      `${hl.total_anomalous||0} anomali · score data: ${rel.score}/100`;
-  } else {
-    // Data reliable — tampilkan normal
-    urgCard.className = `card text-center p-3 h-100 ${urg==='TINDAK'?'bg-danger text-white':urg==='WASPADA'?'bg-warning':'bg-success text-white'}`;
-    document.getElementById('result-urgency-icon').textContent = urgencyEmoji(urg);
-    document.getElementById('result-urgency-text').textContent = urg;
-    document.getElementById('result-counts').textContent =
-      `${hl.total_anomalous||0} anomali · ${hl.total_normal||0} normal`;
+  // Urgency
+  const urg=hl.overall_urgency||'PANTAU';
+  const urgCard=document.getElementById('result-urgency-card');
+  if(!rel.is_reliable&&urg==='PANTAU'){
+    urgCard.style.cssText='background:#f8f9fa;border:2px dashed #adb5bd';
+    document.getElementById('result-urgency-icon').textContent='⚫';
+    document.getElementById('result-urgency-text').innerHTML='<small>DATA TIDAK VALID</small>';
+    document.getElementById('result-counts').textContent='False positive — '+rel.level.replace('_',' ');
+  }else{
+    const colors={TINDAK:'#fde8e8',WASPADA:'#fff8e1',PANTAU:'#e6f9ef'};
+    urgCard.style.cssText=`background:${colors[urg]||'#f8f9fa'}`;
+    document.getElementById('result-urgency-icon').textContent=urgencyEmoji(urg);
+    document.getElementById('result-urgency-text').innerHTML=
+      `<span class="urgency-chip ${urgencyChipClass(urg)}">${urg}</span>`;
+    document.getElementById('result-counts').textContent=
+      !rel.is_reliable?`${hl.total_anomalous||0} anomali · data score: ${rel.score}/100`
+      :`${hl.total_anomalous||0} anomali · ${hl.total_normal||0} normal`;
   }
 
   // IKA
-  document.getElementById('result-ika').innerHTML = ika.actual!=null
-    ? `<div class="d-flex gap-3 flex-wrap">
-        <span><b>IKA Aktual:</b> ${fmt(ika.actual,2)}</span>
-        <span><b>Target:</b> ${fmt(ika.target,2)}</span>
-        <span class="${ika.gap<-7?'text-danger fw-bold':ika.gap<-3?'text-warning fw-bold':'text-success'}"><b>Gap:</b> ${fmt(ika.gap,2)}</span>
-        <span class="badge ${urgencyBadgeClass(ika.urgency)}">${ika.urgency||'–'}</span>
+  document.getElementById('result-ika').innerHTML=ika.actual!=null
+    ?`<div class="row g-2 text-center">
+        <div class="col-4 ika-metric good"><div class="val">${fmt(ika.actual,1)}</div><div class="lbl">Aktual</div></div>
+        <div class="col-4 ika-metric"><div class="val" style="color:var(--text-muted)">${fmt(ika.target,1)}</div><div class="lbl">Target</div></div>
+        <div class="col-4 ika-metric ${ika.gap<-7?'bad':ika.gap<-3?'warn':'good'}">
+          <div class="val">${fmt(ika.gap,1)}</div><div class="lbl">Gap</div></div>
        </div>`
-    : '<span class="text-muted">Data IKA tidak tersedia</span>';
+    :'<span class="text-muted small">Data IKA tidak tersedia</span>';
 
-  // Data Quality
-  document.getElementById('result-dq').innerHTML = dq.overall_score!=null
-    ? `<div class="d-flex gap-3 flex-wrap">
-        <span><b>Score:</b> ${dq.overall_score}/100</span>
-        <span><b>Issues:</b> ${dq.issues_found||0}</span>
-        ${dq.excluded_stations&&dq.excluded_stations.length?`<span class="text-danger"><b>Excluded:</b> ${dq.excluded_stations.join(', ')}</span>`:''}
-       </div>`
-    : '<span class="text-muted">–</span>';
+  // DQ
+  const dqScore=dq.overall_score??null;
+  document.getElementById('result-dq').innerHTML=dqScore!=null
+    ?`<div class="d-flex align-items-center gap-2 mb-1">
+        <div class="progress flex-grow-1" style="height:6px;border-radius:3px">
+          <div class="progress-bar ${dqScore>=70?'bg-success':dqScore>=40?'bg-warning':'bg-danger'}"
+            style="width:${dqScore}%"></div>
+        </div>
+        <span class="fw-bold" style="font-size:.8rem">${dqScore}/100</span>
+       </div>
+       <span class="text-muted" style="font-size:.72rem">Issues: ${dq.issues_found||0}
+         ${dq.excluded_stations&&dq.excluded_stations.length?` · Excluded: ${dq.excluded_stations.join(', ')}`:''}
+       </span>`
+    :'<span class="text-muted small">–</span>';
 
   // Stations
-  const stations = hl.top_stations || [];
-  document.getElementById('result-stations').innerHTML = stations.length
-    ? stations.map(s => `
-        <div class="result-station-card ${s.urgency||''}">
-          <div class="d-flex justify-content-between align-items-start">
-            <div>
-              <span class="badge ${urgencyBadgeClass(s.urgency)} me-1">${s.urgency||'?'}</span>
-              <b>${s.station_id}</b> — ${s.station_name||''}
-            </div>
-            <span class="small text-muted">Indeks: ${fmt(s.indeks_mutu,2)}</span>
+  const stations=hl.top_stations||[];
+  document.getElementById('result-stations').innerHTML=stations.length
+    ?stations.map(s=>`
+      <div class="station-result-card ${s.urgency||''}">
+        <div class="d-flex justify-content-between align-items-start mb-1">
+          <div>
+            <span class="urgency-chip ${urgencyChipClass(s.urgency)}"
+              style="font-size:.65rem;padding:2px 8px;margin-right:4px">${s.urgency||'?'}</span>
+            <b style="font-size:.82rem">${s.station_id}</b>
+            <span class="text-muted" style="font-size:.78rem"> — ${s.station_name||''}</span>
           </div>
-          <div class="small text-muted mt-1">${s.key_finding||''}</div>
-          ${s.pollution_profile?`<div class="small mt-1"><span class="badge bg-secondary me-1">Profil: ${s.pollution_profile}</span>${s.top_suspect?`<span class="badge bg-light text-dark border">Tersangka: ${s.top_suspect}</span>`:''}</div>`:''}
-        </div>`).join('')
-    : '<div class="text-muted small p-2">Tidak ada stasiun anomali terdeteksi.</div>';
+          <span class="badge bg-light text-dark border" style="font-size:.68rem">Indeks: ${fmt(s.indeks_mutu,2)}</span>
+        </div>
+        <div class="text-muted" style="font-size:.78rem;margin-bottom:.3rem">${s.key_finding||''}</div>
+        ${s.pollution_profile?`<div style="font-size:.72rem">
+          <span class="badge bg-secondary me-1">Profil: ${s.pollution_profile}</span>
+          ${s.top_suspect?`<span class="badge bg-light text-dark border">Tersangka: ${s.top_suspect}</span>`:''}
+        </div>`:''}
+      </div>`).join('')
+    :'<div class="text-muted text-center py-3" style="font-size:.82rem"><i class="bi bi-check-circle text-success me-1"></i>Tidak ada stasiun anomali terdeteksi.</div>';
 
   // Actions
-  const actions = hl.priority_actions || [];
-  document.getElementById('result-actions-list').innerHTML = actions.length
-    ? actions.map(a => `
-        <div class="action-item">
-          <span class="badge bg-dark me-1">#${a.priority}</span>
-          <b>${a.action||'–'}</b>
-          <div class="text-muted small mt-1">Target: ${a.target||'–'} · Deadline: ${a.deadline||'–'}</div>
-        </div>`).join('')
-    : '<div class="text-muted small p-2">Tidak ada rekomendasi.</div>';
+  const actions=hl.priority_actions||[];
+  document.getElementById('result-actions-list').innerHTML=actions.length
+    ?actions.map(a=>`
+      <div class="action-card">
+        <div class="action-num">${a.priority}</div>
+        <div>
+          <div style="font-weight:600;font-size:.8rem">${a.action||'–'}</div>
+          <div class="text-muted" style="font-size:.72rem;margin-top:2px">
+            Target: ${a.target||'–'} &nbsp;·&nbsp; Deadline: ${a.deadline||'–'}
+          </div>
+        </div>
+      </div>`).join('')
+    :'<div class="text-muted text-center py-2 small">Tidak ada rekomendasi.</div>';
 
-  // Narasi mentah dari DataAnalystAgent
-  _narrativeVisible = false;
-  document.getElementById('narrative-section').style.display = 'none';
-  document.getElementById('narrative-body').style.display = 'none';
-  if (document.getElementById('narrative-toggle'))
-    document.getElementById('narrative-toggle').innerHTML = '<i class="bi bi-chevron-down"></i> Tampilkan';
-  if (result.analyst_narrative) renderNarrative(result.analyst_narrative);
+  // Narrative
+  _narrativeVisible=false;
+  document.getElementById('narrative-section').style.display='none';
+  document.getElementById('narrative-body').style.display='none';
+  if(document.getElementById('narrative-toggle'))
+    document.getElementById('narrative-toggle').innerHTML='<i class="bi bi-chevron-down"></i> Tampilkan';
+  if(result.analyst_narrative) renderNarrative(result.analyst_narrative);
 
-  // Show content
   document.getElementById('result-content').classList.remove('d-none');
   document.getElementById('result-actions').style.display='flex';
 }
 
-// ── Narrative ─────────────────────────────────────────────────────────────
-let _narrativeVisible = false;
-
-function toggleNarrative() {
-  _narrativeVisible = !_narrativeVisible;
-  const body = document.getElementById('narrative-body');
-  const btn  = document.getElementById('narrative-toggle');
-  body.style.display = _narrativeVisible ? 'block' : 'none';
-  btn.innerHTML = _narrativeVisible
-    ? '<i class="bi bi-chevron-up"></i> Sembunyikan'
-    : '<i class="bi bi-chevron-down"></i> Tampilkan';
+// ── Narrative ─────────────────────────────────────────────────────────
+function toggleNarrative(){
+  _narrativeVisible=!_narrativeVisible;
+  document.getElementById('narrative-body').style.display=_narrativeVisible?'block':'none';
+  document.getElementById('narrative-toggle').innerHTML=_narrativeVisible
+    ?'<i class="bi bi-chevron-up"></i> Sembunyikan'
+    :'<i class="bi bi-chevron-down"></i> Tampilkan';
+}
+function renderNarrative(text){
+  if(!text||!text.trim())return;
+  const esc=text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const hi=esc
+    .replace(/^(COMPLETE ANALYSIS SUMMARY.*|ANALYSIS RESULTS SUMMARY.*|Station .+\(.+\).*|Cross-correlation.*|Causal Evidence.*|Urgency.*|Data Quality.*|Response to Feedback.*)$/gm,'<span class="nar-header">$1</span>')
+    .replace(/\b(TINDAK)\b/g,'<span class="nar-tindak">$1</span>')
+    .replace(/\b(WASPADA)\b/g,'<span class="nar-waspada">$1</span>')
+    .replace(/\b(PANTAU)\b/g,'<span class="nar-pantau">$1</span>')
+    .replace(/\b(YES|ANOMALY|CEMAR BERAT|CEMAR SEDANG|CEMAR RINGAN)\b/g,'<span class="nar-anomaly">$1</span>')
+    .replace(/^(- [A-Za-z \/]+)(:)/gm,'<span class="nar-key">$1</span>$2')
+    .replace(/\b(KLHK\d+)\b/g,'<span class="nar-station">$1</span>');
+  document.getElementById('narrative-content').innerHTML=hi;
+  document.getElementById('narrative-section').style.display='block';
+  if(text.includes('TINDAK')||text.includes('WASPADA'))
+    if(!_narrativeVisible) toggleNarrative();
 }
 
-function renderNarrative(text) {
-  if (!text || !text.trim()) return;
-
-  // Highlight keywords in the narrative text
-  const escaped = text
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-
-  const highlighted = escaped
-    // Section headers (ALL CAPS lines)
-    .replace(/^(COMPLETE ANALYSIS SUMMARY.*|Station .+\(.+\).*|Cross-correlation.*|Causal Evidence.*|Urgency.*|Data Quality.*|Response to Feedback.*)$/gm,
-      '<span class="nar-header">$1</span>')
-    // Urgency keywords
-    .replace(/\b(TINDAK)\b/g, '<span class="nar-tindak">$1</span>')
-    .replace(/\b(WASPADA)\b/g, '<span class="nar-waspada">$1</span>')
-    .replace(/\b(PANTAU)\b/g, '<span class="nar-pantau">$1</span>')
-    // Anomaly markers
-    .replace(/\b(YES|ANOMALY|CEMAR BERAT|CEMAR SEDANG|CEMAR RINGAN)\b/g, '<span class="nar-anomaly">$1</span>')
-    // Keys before colon
-    .replace(/^(- [A-Za-z \/]+)(:)/gm, '<span class="nar-key">$1</span>$2')
-    // Station IDs
-    .replace(/\b(KLHK\d+)\b/g, '<span class="nar-station">$1</span>');
-
-  document.getElementById('narrative-content').innerHTML = highlighted;
-  document.getElementById('narrative-section').style.display = 'block';
-
-  // Auto-expand if there's an anomaly
-  if (text.includes('TINDAK') || text.includes('WASPADA')) {
-    if (!_narrativeVisible) toggleNarrative();
-  }
-}
-
-// ── Detail popup ──────────────────────────────────────────────────────────
+// ── Detail Modal ──────────────────────────────────────────────────────
 async function showDetail(){
   if(!_currentJobId)return;
   const modal=new bootstrap.Modal(document.getElementById('detail-modal'));
   document.getElementById('detail-body').innerHTML='<p class="text-muted">Memuat…</p>';
   modal.show();
   try{
-    const r=await fetch('/api/analyze/'+_currentJobId+'/detail');
-    const d=await r.json();
+    const d=await(await fetch('/api/analyze/'+_currentJobId+'/detail')).json();
     renderDetail(d);
   }catch(e){document.getElementById('detail-body').innerHTML='<p class="text-danger">'+e.message+'</p>'}
 }
-
 function renderDetail(d){
   const body=document.getElementById('detail-body');
-  let html='';
+  let h='';
   const dq=d.data_quality||{};
-  html+=`<div class="mb-3"><h6>Data Quality</h6><div class="small">Score: <b>${dq.overall_score??'–'}</b>/100 · Issues: ${dq.issues_found??0}</div>`;
+  h+=`<div class="mb-3"><h6 class="fw-bold">Data Quality</h6>
+    <div class="small">Score: <b>${dq.overall_score??'–'}</b>/100 · Issues: ${dq.issues_found??0}</div>`;
   if(dq.outliers&&dq.outliers.length){
-    html+='<ul class="small mt-1">';dq.outliers.forEach(o=>{html+=`<li><b>${o.station||o.station_id}</b> ${o.field}: ${o.value} — ${o.issue||o.reason}</li>`});html+='</ul>';
+    h+='<ul class="small mt-1">';
+    dq.outliers.forEach(o=>h+=`<li><b>${o.station||o.station_id}</b> ${o.field}: ${o.value} — ${o.issue||o.reason}</li>`);
+    h+='</ul>';
   }
-  html+='</div>';
-  if(d.feedback_loops>0)html+=`<div class="alert alert-info small">ReportEvaluator melakukan ${d.feedback_loops} feedback loop ke DataAnalyst.</div>`;
+  h+='</div>';
+  if(d.feedback_loops>0) h+=`<div class="alert alert-info small"><i class="bi bi-arrow-repeat me-1"></i>ReportEvaluator melakukan <b>${d.feedback_loops}</b> feedback loop ke DataAnalyst.</div>`;
   if(d.unresolved_issues&&d.unresolved_issues.length){
-    html+='<div class="alert alert-warning small"><b>Isu belum terselesaikan:</b><ul>';d.unresolved_issues.forEach(i=>{html+='<li>'+i+'</li>'});html+='</ul></div>';
+    h+='<div class="alert alert-warning small"><b>Isu belum terselesaikan:</b><ul class="mb-0">';
+    d.unresolved_issues.forEach(i=>h+='<li>'+i+'</li>');
+    h+='</ul></div>';
   }
-  const detail=d.detail_reasoning||{};
-  const perStation=detail.per_station||[];
-  perStation.forEach(st=>{
-    html+=`<div class="card mb-2"><div class="card-body p-2">`;
-    html+=`<h6 class="mb-2">${st.station_id} — ${st.station_name||''}</h6>`;
+  const pp=(d.detail_reasoning||{}).per_station||[];
+  pp.forEach(st=>{
+    h+=`<div class="section-card mb-2"><div class="p-3">
+      <h6 class="fw-bold mb-2"><i class="bi bi-broadcast me-1 text-primary"></i>${st.station_id} — ${st.station_name||''}</h6>`;
     (st.steps||[]).forEach(step=>{
-      html+=`<div class="mb-1"><span class="step-badge">${step.step}</span><b>${step.name}</b><br><small class="text-muted ms-4">${step.result||'–'}</small></div>`;
+      h+=`<div class="mb-2 d-flex gap-2">
+        <span class="step-badge">${step.step}</span>
+        <div><b>${step.name}</b><br><small class="text-muted">${step.result||'–'}</small></div>
+      </div>`;
     });
     if(st.causal_chain&&st.causal_chain.length){
-      html+='<div class="mt-2 small"><b>Causal Evidence:</b><ul>';
-      st.causal_chain.forEach(c=>{html+=`<li>${c.company_name||'?'}: confidence ${c.causal_confidence||'?'}, jarak ${c.distance_km??'?'}km, params: ${(c.violated_params||[]).join(', ')||'–'}</li>`});
-      html+='</ul></div>';
+      h+='<div class="small mt-2"><b>Causal Evidence:</b><ul class="mb-0">';
+      st.causal_chain.forEach(c=>h+=`<li>${c.company_name||'?'}: confidence <b>${c.causal_confidence||'?'}</b>, jarak ${c.distance_km??'?'}km, params: ${(c.violated_params||[]).join(', ')||'–'}</li>`);
+      h+='</ul></div>';
     }
-    html+='</div></div>';
+    h+='</div></div>';
   });
-  if(!perStation.length)html+='<p class="text-muted">Detail reasoning tidak tersedia.</p>';
-  body.innerHTML=html;
+  if(!pp.length) h+='<p class="text-muted">Detail reasoning tidak tersedia.</p>';
+  body.innerHTML=h;
 }
 
-// ── Telegram send ─────────────────────────────────────────────────────────
+// ── Telegram ──────────────────────────────────────────────────────────
 async function sendTelegram(){
   const chatId=prompt('Masukkan Telegram Chat ID:');
   if(!chatId)return;
   try{
-    const r=await fetch('/api/analyze/'+_currentJobId+'/telegram',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:chatId})});
-    const d=await r.json();
-    alert(d.sent?'Terkirim ke Telegram!':'Gagal: '+(d.error||'unknown'));
+    const d=await(await fetch('/api/analyze/'+_currentJobId+'/telegram',
+      {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:chatId})})).json();
+    alert(d.sent?'✅ Terkirim ke Telegram!':'❌ Gagal: '+(d.error||'unknown'));
   }catch(e){alert('Error: '+e.message)}
 }
 
-// ── Init ──────────────────────────────────────────────────────────────────
+// ── Init ──────────────────────────────────────────────────────────────
 (async()=>{await Promise.all([loadSummary(),loadOnlimo(),loadBmkg(),loadSparing(),loadSitala(),loadAnomalyLog()])})();
-setInterval(()=>{loadSummary();loadOnlimo();loadBmkg();loadSparing();loadSitala();loadAnomalyLog()},5*60*1000);
+setInterval(()=>{loadSummary();loadOnlimo();loadBmkg();loadSparing();loadSitala();loadAnomalyLog();},5*60*1000);
 </script>
 </body>
 </html>

@@ -114,9 +114,9 @@ def safe_int(value: Any, default: int = 0) -> int:
 # =============================================================================
 
 class MemoryCache:
-    def __init__(self, ttl_hours: int = CACHE_TTL_HOURS):
+    def __init__(self, ttl_minutes: int = 5):
         self._store: dict[str, dict] = {}
-        self._ttl = timedelta(hours=ttl_hours)
+        self._ttl = timedelta(minutes=ttl_minutes)
 
     def set(self, key: str, value: Any) -> None:
         self._store[key] = {"value": value, "timestamp": datetime.now()}
@@ -133,8 +133,11 @@ class MemoryCache:
     def clear(self) -> None:
         self._store.clear()
 
+    def size(self) -> int:
+        return len(self._store)
 
-cache = MemoryCache()
+
+cache = MemoryCache(ttl_minutes=5)
 
 
 # =============================================================================
@@ -736,22 +739,46 @@ def get_all_anomaly_log(limit: int = 30) -> list[dict]:
 
 def get_dashboard_summary() -> dict:
     try:
+        # status_warna berisi hex color (FC0004/FDF92F/02AE4E/4F81BC), bukan nama warna.
+        # Gunakan status_mutu sebagai klasifikasi utama.
         s = (_query("""
-            SELECT COUNT(*) AS total,
-                SUM(CASE WHEN status_warna = 'MERAH' THEN 1 ELSE 0 END)   AS critical,
-                SUM(CASE WHEN status_warna = 'KUNING' THEN 1 ELSE 0 END)  AS warning,
-                SUM(CASE WHEN status_warna = 'HIJAU' THEN 1 ELSE 0 END)   AS good
+            SELECT
+                COUNT(*) AS total,
+                SUM(CASE
+                    WHEN status_mutu = 'CEMAR BERAT' THEN 1
+                    ELSE 0 END) AS critical,
+                SUM(CASE
+                    WHEN status_mutu IN ('CEMAR SEDANG', 'CEMAR RINGAN') THEN 1
+                    ELSE 0 END) AS warning,
+                SUM(CASE
+                    WHEN status_mutu IN ('MEMENUHI BAKUMUTU', 'BAIK') THEN 1
+                    ELSE 0 END) AS good,
+                SUM(CASE
+                    WHEN status_mutu IS NULL THEN 1
+                    ELSE 0 END) AS no_status
             FROM v_onlimo_terbaru
         """) or [{}])[0]
-        max_rain = safe_float(((_query("SELECT MAX(total_rainfall_mm) AS m FROM v_bmkg_terbaru") or [{}])[0]).get("m"))
+
+        max_rain = safe_float(((_query(
+            "SELECT MAX(total_rainfall_mm) AS m FROM v_bmkg_terbaru"
+        ) or [{}])[0]).get("m"))
+
         langgar = safe_int(((_query("""
             SELECT COUNT(*) AS cnt FROM sparing_monitoring
             WHERE status_taat = 'TIDAK TAAT'
               AND reported_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
         """) or [{}])[0]).get("cnt"))
-        return {"total_stations": safe_int(s.get("total")), "critical": safe_int(s.get("critical")),
-                "warning": safe_int(s.get("warning")), "good": safe_int(s.get("good")),
-                "max_rainfall_mm": max_rain, "sparing_langgar": langgar}
+
+        return {
+            "total_stations":  safe_int(s.get("total")),
+            "critical":        safe_int(s.get("critical")),
+            "warning":         safe_int(s.get("warning")),
+            "good":            safe_int(s.get("good")),
+            "no_status":       safe_int(s.get("no_status")),
+            "max_rainfall_mm": max_rain,
+            "sparing_langgar": langgar,
+        }
     except Exception as e:
         logger.error(f"get_dashboard_summary: {e}")
-        return {"total_stations": 0, "critical": 0, "warning": 0, "good": 0, "max_rainfall_mm": 0, "sparing_langgar": 0}
+        return {"total_stations": 0, "critical": 0, "warning": 0, "good": 0,
+                "no_status": 0, "max_rainfall_mm": 0, "sparing_langgar": 0}

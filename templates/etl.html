@@ -46,8 +46,11 @@
 <nav class="navbar navbar-dark py-2 mb-4" id="navbar">
   <div class="container-fluid">
     <span class="navbar-brand fw-bold"><i class="bi bi-shield-lock me-2"></i>WQSA Admin — ETL Manager</span>
-    <div class="d-flex gap-2">
-      <span class="text-white-50 small align-self-center" id="clock"></span>
+    <div class="d-flex align-items-center gap-2">
+      <span class="text-white-50 small" id="clock"></span>
+      <button class="btn btn-outline-warning btn-sm" onclick="clearCache()">
+        <i class="bi bi-arrow-clockwise me-1"></i>Clear Cache
+      </button>
       <a href="/" class="btn btn-outline-light btn-sm"><i class="bi bi-speedometer2 me-1"></i>Dashboard</a>
     </div>
   </div>
@@ -668,6 +671,16 @@ async function runOnlimo(source) {
     setStatus('onlimo', `<span class="text-danger">Error: ${e.message}</span>`);
     disableAllBtns(false);
   }
+}
+
+// ── Cache ─────────────────────────────────────────────────────────────────
+async function clearCache() {
+  try {
+    const r = await fetch('/admin/etl/clear-cache', {method:'POST'});
+    const d = await r.json();
+    appendEtlLog([`[${new Date().toLocaleTimeString('id-ID')}] Cache cleared — ${d.entries_removed} entries removed`]);
+    alert(`Cache berhasil dibersihkan (${d.entries_removed} entries). Dashboard akan menampilkan data terbaru.`);
+  } catch(e) { alert('Gagal clear cache: ' + e.message); }
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────
