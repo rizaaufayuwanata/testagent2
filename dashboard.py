@@ -27,6 +27,7 @@ from etl import (
     run_all,
 )
 from data_layer import (
+    get_station_trend,
     get_all_onlimo_flat,
     get_all_rainfall_data,
     get_sparing_summary,
@@ -35,6 +36,10 @@ from data_layer import (
     get_all_sitala_with_urgency,
     get_all_anomaly_log,
     get_dashboard_summary,
+    get_cached_analysis,
+    save_cached_analysis,
+    list_analysis_cache,
+    invalidate_analysis_cache,
 )
 
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -197,6 +202,80 @@ def api_sitala():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/station-trend/<station_id>")
+def api_station_trend(station_id: str):
+    try:
+        days = int(request.args.get("days", 30))
+        days = max(7, min(days, 365))
+        return jsonify(get_station_trend(station_id, days))
+    except Exception as e:
+        logger.exception("api_station_trend failed")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/stations-by-status")
+def api_stations_by_status():
+    """Daftar stasiun per kategori status untuk popup KPI card."""
+    try:
+        category = request.args.get("category", "all")
+        from data_layer import _query, safe_float, safe_int
+
+        # Mapping kategori ke kondisi SQL
+        conditions = {
+            "critical":  "status_mutu = 'CEMAR BERAT'",
+            "warning":   "status_mutu IN ('CEMAR SEDANG', 'CEMAR RINGAN')",
+            "good":      "status_mutu IN ('MEMENUHI BAKUMUTU', 'BAIK')",
+            "nostatus":  "status_mutu IS NULL",
+            "all":       "1=1",
+        }
+        where = conditions.get(category, "1=1")
+
+        rows = _query(f"""
+            SELECT station_id, station_name, nama_das, provinsi, kabkot, kecamatan,
+                   latitude, longitude,
+                   indeks_mutu, status_mutu, status_warna, parameter_kritis,
+                   cod, bod, tss, do_val AS `do`, ph, amonia,
+                   tanggal_ukur, tanggal_validasi
+            FROM v_onlimo_terbaru
+            WHERE {where}
+            ORDER BY
+                CASE status_mutu
+                    WHEN 'CEMAR BERAT'      THEN 1
+                    WHEN 'CEMAR SEDANG'     THEN 2
+                    WHEN 'CEMAR RINGAN'     THEN 3
+                    WHEN 'MEMENUHI BAKUMUTU' THEN 4
+                    WHEN 'BAIK'             THEN 5
+                    ELSE 6
+                END,
+                COALESCE(indeks_mutu, 0) DESC,
+                station_id
+        """)
+
+        return jsonify([{
+            "station_id":    r["station_id"],
+            "station_name":  r.get("station_name") or "–",
+            "das":           r.get("nama_das") or "–",
+            "kabkot":        r.get("kabkot") or "–",
+            "kecamatan":     r.get("kecamatan") or "–",
+            "latitude":      safe_float(r.get("latitude")),
+            "longitude":     safe_float(r.get("longitude")),
+            "indeks_mutu":   safe_float(r.get("indeks_mutu")),
+            "status":        r.get("status_mutu") or "TIDAK DIKETAHUI",
+            "status_warna":  r.get("status_warna") or "",
+            "param_kritis":  r.get("parameter_kritis") or "–",
+            "cod":           safe_float(r.get("cod")),
+            "bod":           safe_float(r.get("bod")),
+            "tss":           safe_float(r.get("tss")),
+            "do":            safe_float(r.get("do")),
+            "ph":            safe_float(r.get("ph")),
+            "amonia":        safe_float(r.get("amonia")),
+            "tanggal":       str(r.get("tanggal_ukur") or r.get("tanggal_validasi") or ""),
+        } for r in rows])
+    except Exception as e:
+        logger.exception("api_stations_by_status failed")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/anomaly_log")
 def api_anomaly_log():
     try:
@@ -211,22 +290,44 @@ def api_anomaly_log():
 # API — AGENT ANALYSIS (defined inputs only)
 # =============================================================================
 
-def _run_agent_job(job_id: str, analysis_type: str, target_value: str):
-    """Background worker for agent analysis."""
+def _run_agent_job(job_id: str, analysis_type: str, target_value: str, force_refresh: bool = False):
+    """Background worker for agent analysis, dengan cache check."""
     _jobs[job_id]["status"] = "running"
     _jobs[job_id]["started_at"] = datetime.now().isoformat()
+    t0 = datetime.now()
+
     try:
+        # Cek cache terlebih dahulu (kecuali force_refresh)
+        if not force_refresh:
+            cached = get_cached_analysis(analysis_type, target_value)
+            if cached:
+                elapsed = int((datetime.now() - t0).total_seconds())
+                _jobs[job_id]["status"]      = "done"
+                _jobs[job_id]["result"]      = cached
+                _jobs[job_id]["from_cache"]  = True
+                _jobs[job_id]["finished_at"] = datetime.now().isoformat()
+                logger.info(f"Job {job_id} served from cache in {elapsed}s")
+                return
+
+        # Jalankan agent pipeline
         result = run_chain(
             analysis_type=analysis_type,
             target_value=target_value,
             session_id=job_id,
         )
-        _jobs[job_id]["status"] = "done"
-        _jobs[job_id]["result"] = result
+        elapsed_sec = int((datetime.now() - t0).total_seconds())
+
+        # Simpan ke cache
+        save_cached_analysis(analysis_type, target_value, result, elapsed_sec)
+
+        _jobs[job_id]["status"]      = "done"
+        _jobs[job_id]["result"]      = result
+        _jobs[job_id]["from_cache"]  = False
+        _jobs[job_id]["elapsed_sec"] = elapsed_sec
     except Exception as e:
         logger.exception(f"Agent job {job_id} failed")
         _jobs[job_id]["status"] = "error"
-        _jobs[job_id]["error"] = str(e)
+        _jobs[job_id]["error"]  = str(e)
     _jobs[job_id]["finished_at"] = datetime.now().isoformat()
 
 
@@ -240,27 +341,45 @@ def api_analyze():
     }
     """
     try:
-        data = request.get_json(force=True, silent=True) or {}
+        data          = request.get_json(force=True, silent=True) or {}
         analysis_type = data.get("type", "full_scan")
-        target_value = data.get("target", "")
+        target_value  = data.get("target", "")
+        force_refresh = bool(data.get("force_refresh", False))
 
         if analysis_type not in ("full_scan", "station", "region"):
             return jsonify({"error": "Invalid type. Use: full_scan, station, region"}), 400
 
+        # Jika check_cache=true, hanya cek cache tanpa menjalankan agent
+        if data.get("check_cache"):
+            cached = get_cached_analysis(analysis_type, target_value)
+            if cached:
+                return jsonify({
+                    "has_cache":    True,
+                    "cached_at":    cached.get("_cached_at"),
+                    "elapsed_sec":  cached.get("_elapsed_sec", 0),
+                    "cache_key":    cached.get("_cache_key"),
+                })
+            return jsonify({"has_cache": False})
+
         job_id = f"job-{uuid.uuid4().hex[:12]}"
         _jobs[job_id] = {
-            "status": "queued",
-            "type": analysis_type,
-            "target": target_value,
+            "status":     "queued",
+            "type":       analysis_type,
+            "target":     target_value,
             "created_at": datetime.now().isoformat(),
-            "result": None,
-            "error": None,
+            "result":     None,
+            "error":      None,
+            "from_cache": None,
         }
 
-        thread = threading.Thread(target=_run_agent_job, args=(job_id, analysis_type, target_value), daemon=True)
+        thread = threading.Thread(
+            target=_run_agent_job,
+            args=(job_id, analysis_type, target_value, force_refresh),
+            daemon=True,
+        )
         thread.start()
 
-        logger.info(f"Job {job_id}: {analysis_type} / {target_value or 'all'}")
+        logger.info(f"Job {job_id}: {analysis_type} / {target_value or 'all'} force={force_refresh}")
         return jsonify({"job_id": job_id, "status": "queued"}), 202
 
     except Exception as e:
@@ -406,7 +525,7 @@ def _run_etl_job(job_id: str, source: str, days_back: int, station_ids: list = N
             if source in ("all", "onlimo_monitoring"):
                 results["onlimo_monitoring"] = sync_onlimo_monitoring(db, session, days_back, station_ids)
             if source in ("all", "onlimo_status"):
-                results["onlimo_status"] = sync_onlimo_status(db, session, station_ids)
+                results["onlimo_status"] = sync_onlimo_status(db, session, station_ids, days_back)
             if source == "onlimo":
                 results["onlimo_stasiun"]    = sync_onlimo_stasiun(db, session)
                 results["onlimo_monitoring"]  = sync_onlimo_monitoring(db, session, days_back, station_ids)
@@ -430,10 +549,11 @@ def _run_etl_job(job_id: str, source: str, days_back: int, station_ids: list = N
         _etl_jobs[job_id]["status"]   = "done"
         _etl_jobs[job_id]["results"]  = results
         _etl_jobs[job_id]["total"]    = total
-        # Bersihkan cache agar dashboard langsung tampilkan data terbaru
+        # Bersihkan memory cache dan analysis cache setelah ETL
         from data_layer import cache
         cache.clear()
-        logger.info(f"ETL job {job_id} done — cache cleared")
+        invalidate_analysis_cache()
+        logger.info(f"ETL job {job_id} done — memory cache & analysis cache cleared")
     except Exception as e:
         logger.exception(f"ETL job {job_id} failed")
         _etl_jobs[job_id]["status"] = "error"
@@ -472,6 +592,25 @@ def admin_etl_status(job_id: str):
     if not job:
         return jsonify({"error": "Job not found"}), 404
     return jsonify({"job_id": job_id, **job})
+
+
+@app.route("/api/analysis-cache")
+def api_analysis_cache():
+    """List cache analisis yang masih valid."""
+    try:
+        return jsonify(list_analysis_cache())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/analysis-cache/clear", methods=["POST"])
+def api_analysis_cache_clear():
+    """Hapus semua cache analisis."""
+    try:
+        invalidate_analysis_cache()
+        return jsonify({"cleared": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/admin/etl/clear-cache", methods=["POST"])

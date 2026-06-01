@@ -68,7 +68,9 @@ def fetch_raw_data(target: dict) -> dict:
     _log(f"[Phase 1] Fetching raw data — target: {target}")
 
     if target["type"] == "station":
-        stations = get_onlimo_data(station_id=target["station_id"], das=TARGET_DAS)
+        # Jangan filter DAS saat analisis stasiun spesifik
+        # — stasiun bisa berasal dari DAS mana saja
+        stations = get_onlimo_data(station_id=target["station_id"])
     elif target["type"] == "location":
         all_st = get_onlimo_data(das=TARGET_DAS)
         loc = target["location"].lower()
@@ -253,11 +255,33 @@ def run_chain(analysis_type: str = "full_scan", target_value: str = "",
     raw_bundle = fetch_raw_data(target)
 
     if not raw_bundle["candidate_stations"]:
+        # Beri pesan spesifik berdasarkan target
+        all_stations_count = len(raw_bundle.get("all_stations", []))
+        if analysis_type == "station" and target_value:
+            msg = (
+                f"Stasiun <b>{target_value}</b> tidak memiliki data monitoring (sensor). "
+                f"ETL yang perlu dijalankan: <b>Onlimo → Monitoring</b>, "
+                f"pilih stasiun <b>{target_value}</b> di Admin ETL.<br>"
+                f"<small>Stasiun ada di database master, tapi belum ada pembacaan sensor yang di-sync.</small>"
+            )
+        elif all_stations_count == 0:
+            msg = (
+                "Tidak ada data stasiun sama sekali. "
+                "Jalankan <b>ETL → Onlimo → Stasiun</b> terlebih dahulu."
+            )
+        else:
+            msg = (
+                f"Ditemukan {all_stations_count} stasiun master, tapi tidak ada yang memiliki "
+                f"data monitoring aktif. Jalankan <b>ETL → Onlimo → Monitoring</b>."
+            )
+        _log(f"[Phase 1] No candidates: {msg}")
         return normalize_chain_output({
             "status": "no_data",
             "session_id": session_id,
             "timestamp": ts.isoformat(),
-            "message": "Tidak ada data stasiun ditemukan. Pastikan ETL sudah dijalankan.",
+            "message": msg,
+            "missing_etl": "onlimo_monitoring",
+            "all_stations_count": all_stations_count,
         })
 
     # ── Phase 2: DataEvaluator ─────────────────────────────────────────────

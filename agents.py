@@ -57,14 +57,16 @@ def _log(msg: str):
     logger.info(msg)
 
 
-# Kumpulkan semua teks dari assistant dalam satu loop
+# Kumpulkan teks dan think() calls dari satu loop
 _loop_collected_texts: list[str] = []
+_loop_think_notes: list[dict] = []   # {"step": n, "label": "...", "thought": "..."}
 
 
 def _run_loop(model, system_prompt, user_content, tools_list, tool_funcs, max_steps=30, label="Agent"):
     """Generic agentic loop shared by DataEvaluator and DataAnalyst."""
-    global _loop_collected_texts
+    global _loop_collected_texts, _loop_think_notes
     _loop_collected_texts = []
+    _loop_think_notes     = []
 
     messages = [
         {"role": "system", "content": system_prompt},
@@ -110,6 +112,16 @@ def _run_loop(model, system_prompt, user_content, tools_list, tool_funcs, max_st
             args = json.loads(tc.function.arguments)
             summary = ", ".join(f"{k}={str(v)[:50]}" for k, v in args.items())
             _log(f"[{label}] Step {step:02d} → {name}({summary})")
+
+            # Tangkap konten think() — inilah narasi analisis terbaik
+            if name == "think":
+                thought = args.get("thought", "").strip()
+                if thought:
+                    _loop_think_notes.append({
+                        "step": step,
+                        "label": label,
+                        "thought": thought,
+                    })
 
             if name in tool_funcs:
                 try:
@@ -790,31 +802,47 @@ class DataAnalystAgent:
         result = parse_agent_json(raw, label)
         result = normalize_agent_output(result, "analyst")
 
-        # Capture narrative from collected texts
-        narrative = _extract_narrative(_loop_collected_texts, raw)
+        # Bangun narasi dari think() calls — ini adalah reasoning chain terbaik
+        narrative = _build_narrative_from_thinks(_loop_think_notes, _loop_collected_texts, raw)
         result["_raw_narrative"] = narrative
-        _log(f"[DataAnalyst] Narrative captured: {len(narrative)} chars from {len(_loop_collected_texts)} messages")
+        _log(f"[DataAnalyst] Narrative: {len(narrative)} chars dari {len(_loop_think_notes)} think() calls")
         return result
 
 
-def _extract_narrative(collected_texts: list, raw_fallback: str) -> str:
-    """Extract the best narrative text from collected LLM messages."""
-    PREFER = ["ANALYSIS RESULTS SUMMARY", "COMPLETE ANALYSIS SUMMARY",
-              "ANALYSIS SUMMARY", "Station KLHK", "Anomaly Status:"]
-    AVOID  = ["Summary of Failures", "## Failure", "failed", "error occurred"]
+def _build_narrative_from_thinks(
+    think_notes: list,
+    collected_texts: list,
+    raw_fallback: str
+) -> str:
+    """
+    Bangun narasi human-readable dari think() tool calls.
+    think() berisi reasoning chain lengkap yang lebih informatif dari output JSON.
+    """
+    if think_notes:
+        parts = []
+        for i, note in enumerate(think_notes, 1):
+            thought = note["thought"].strip()
+            # Hapus tag <thinking> jika ada
+            thought = thought.replace("<thinking>", "").replace("</thinking>", "").strip()
+            if thought:
+                parts.append(thought)
 
-    for text in reversed(collected_texts):
-        has_analysis = any(kw.lower() in text.lower() for kw in PREFER)
-        is_failure = any(kw.lower() in text.lower() for kw in AVOID)
-        if has_analysis and not is_failure:
-            return text
+        if parts:
+            return "\n\n---\n\n".join(parts)
 
-    candidates = [
-        t for t in collected_texts
-        if len(t) > 200
-        and not t.strip().startswith('{')
-        and not any(kw.lower() in t.lower() for kw in AVOID)
-    ]
+    # Fallback: cari teks non-JSON dari collected_texts
+    AVOID = ["summary of failures", "## failure", "```json", "```"]
+    candidates = []
+    for text in collected_texts:
+        low = text.lower()
+        # Skip teks yang pure JSON atau error summary
+        if text.strip().startswith('{') or text.strip().startswith('```'):
+            continue
+        if any(kw in low for kw in AVOID):
+            continue
+        if len(text) > 100:
+            candidates.append(text)
+
     if candidates:
         return max(candidates, key=len)
 

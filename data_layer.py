@@ -174,7 +174,12 @@ def get_onlimo_data(station_id: str = "", das: str = "") -> list[dict]:
     try:
         rows = _query(sql, tuple(params))
         if not rows:
-            return [{"info": "No stations found matching criteria"}]
+            # Fallback: stasiun ada di master tapi belum ada data monitoring
+            # Ambil data minimal dari onlimo_stasiun + onlimo_status
+            fallback = _get_onlimo_fallback(station_id, das)
+            if fallback:
+                return fallback
+            return [{"info": "No stations found matching criteria", "missing_etl": "onlimo_monitoring"}]
 
         result = [_normalize_onlimo(r) for r in rows]
         cache.set(cache_key, result)
@@ -221,6 +226,80 @@ def _normalize_onlimo(row: dict) -> dict:
         "timestamp": ts.isoformat() if isinstance(ts, datetime) else str(ts or ""),
         "tanggal_validasi": str(row.get("tanggal_validasi") or ""),
     }
+
+
+def _get_onlimo_fallback(station_id: str = "", das: str = "") -> list[dict]:
+    """
+    Fallback: stasiun ada di master tapi belum ada data pembacaan sensor.
+    Ambil data dari onlimo_stasiun + onlimo_status saja (tanpa parameter sensor).
+    """
+    try:
+        conditions = ["s.station_id IS NOT NULL"]
+        params = []
+        if station_id:
+            conditions.append("s.station_id = %s")
+            params.append(station_id.upper())
+        if das:
+            conditions.append("s.nama_das = %s")
+            params.append(das)
+
+        rows = _query(f"""
+            SELECT
+                s.station_id, s.station_name, s.nama_das, s.provinsi,
+                s.kabkot, s.kecamatan, s.latitude, s.longitude,
+                st.indeks AS indeks_mutu,
+                st.status_nama AS status_mutu,
+                st.status_warna,
+                st.parameter_kritis,
+                st.tanggal_validasi,
+                st.keterangan
+            FROM onlimo_stasiun s
+            LEFT JOIN onlimo_status st ON s.station_id = st.station_id
+                AND st.tanggal_validasi = (
+                    SELECT MAX(tanggal_validasi)
+                    FROM onlimo_status
+                    WHERE station_id = s.station_id
+                )
+            WHERE {' AND '.join(conditions)}
+            ORDER BY s.station_id
+            LIMIT 20
+        """, tuple(params))
+
+        if not rows:
+            return []
+
+        result = []
+        for row in rows:
+            result.append({
+                "station_id":       row.get("station_id"),
+                "station_name":     row.get("station_name"),
+                "das":              row.get("nama_das"),
+                "provinsi":         row.get("provinsi"),
+                "kabkot":           row.get("kabkot"),
+                "kecamatan":        row.get("kecamatan"),
+                "latitude":         safe_float(row.get("latitude")),
+                "longitude":        safe_float(row.get("longitude")),
+                "indeks_mutu":      safe_float(row.get("indeks_mutu")),
+                "status":           row.get("status_mutu") or "TIDAK DIKETAHUI",
+                "status_warna":     row.get("status_warna"),
+                "parameter_kritis": row.get("parameter_kritis"),
+                # Semua parameter sensor kosong — belum ada data monitoring
+                "parameter": {
+                    "cod": 0.0, "bod": 0.0, "tss": 0.0,
+                    "do": 0.0,  "ph": 0.0,  "nitrat": 0.0,
+                    "nitrit": 0.0, "amonia": 0.0, "suhu": 0.0,
+                    "turbidity": 0.0, "dhl": 0.0, "ews_per": 0.0,
+                },
+                "timestamp": "",
+                "tanggal_validasi": str(row.get("tanggal_validasi") or ""),
+                "_no_sensor_data": True,   # flag: sensor belum ada
+                "_missing_etl": "Onlimo Monitoring (ETL sensor belum dijalankan untuk stasiun ini)",
+            })
+        logger.info(f"Fallback onlimo data: {len(result)} stations (no sensor data)")
+        return result
+    except Exception as e:
+        logger.error(f"_get_onlimo_fallback failed: {e}")
+        return []
 
 
 # =============================================================================
@@ -737,6 +816,145 @@ def get_all_anomaly_log(limit: int = 30) -> list[dict]:
         return []
 
 
+def get_station_trend(station_id: str, days: int = 30) -> dict:
+    """
+    Ambil data historis sebuah stasiun untuk visualisasi trend.
+    Returns: info stasiun, trend indeks harian, trend sensor harian, anomaly events.
+    """
+    try:
+        # ── Info stasiun ───────────────────────────────────────────────
+        info_rows = _query("""
+            SELECT s.station_id, s.station_name, s.nama_das, s.provinsi,
+                   s.kabkot, s.kecamatan, s.latitude, s.longitude,
+                   st.indeks AS indeks_terkini, st.status_nama AS status_terkini,
+                   st.status_warna, st.tanggal_validasi
+            FROM onlimo_stasiun s
+            LEFT JOIN onlimo_status st ON s.station_id = st.station_id
+                AND st.tanggal_validasi = (
+                    SELECT MAX(tanggal_validasi) FROM onlimo_status
+                    WHERE station_id = s.station_id
+                )
+            WHERE s.station_id = %s
+        """, (station_id.upper(),))
+        info = info_rows[0] if info_rows else {}
+
+        # ── Trend indeks mutu harian (dari onlimo_status) ──────────────
+        status_rows = _query("""
+            SELECT tanggal_validasi,
+                   indeks, status_nama, status_warna, parameter_kritis
+            FROM onlimo_status
+            WHERE station_id = %s
+              AND tanggal_validasi >= DATE_SUB(CURDATE(), INTERVAL %s DAY)
+            ORDER BY tanggal_validasi
+        """, (station_id.upper(), days))
+
+        trend_ika = [{
+            "tanggal":        str(r["tanggal_validasi"]),
+            "indeks":         safe_float(r.get("indeks")),
+            "status":         r.get("status_nama") or "",
+            "status_warna":   r.get("status_warna") or "",
+            "param_kritis":   r.get("parameter_kritis") or "",
+        } for r in status_rows]
+
+        # ── Trend sensor harian (agregasi dari onlimo_pembacaan) ────────
+        sensor_rows = _query("""
+            SELECT
+                DATE(tanggal_ukur)          AS tanggal,
+                COUNT(*)                    AS n_readings,
+                ROUND(AVG(cod), 2)          AS cod_avg,
+                ROUND(MAX(cod), 2)          AS cod_max,
+                ROUND(AVG(bod), 2)          AS bod_avg,
+                ROUND(MAX(bod), 2)          AS bod_max,
+                ROUND(AVG(tss), 2)          AS tss_avg,
+                ROUND(AVG(do_val), 2)       AS do_avg,
+                ROUND(AVG(ph), 2)           AS ph_avg,
+                ROUND(AVG(amonia), 2)       AS amonia_avg,
+                ROUND(MAX(amonia), 2)       AS amonia_max,
+                ROUND(AVG(turbidity), 2)    AS turbidity_avg,
+                ROUND(AVG(nitrat), 2)       AS nitrat_avg,
+                ROUND(AVG(suhu), 2)         AS suhu_avg
+            FROM onlimo_pembacaan
+            WHERE station_id = %s
+              AND tanggal_ukur >= DATE_SUB(CURDATE(), INTERVAL %s DAY)
+              AND deleted = 0
+            GROUP BY DATE(tanggal_ukur)
+            ORDER BY tanggal
+        """, (station_id.upper(), days))
+
+        trend_sensor = [{
+            "tanggal":       str(r["tanggal"]),
+            "n":             safe_int(r.get("n_readings")),
+            "cod":           safe_float(r.get("cod_avg")),
+            "cod_max":       safe_float(r.get("cod_max")),
+            "bod":           safe_float(r.get("bod_avg")),
+            "bod_max":       safe_float(r.get("bod_max")),
+            "tss":           safe_float(r.get("tss_avg")),
+            "do":            safe_float(r.get("do_avg")),
+            "ph":            safe_float(r.get("ph_avg")),
+            "amonia":        safe_float(r.get("amonia_avg")),
+            "amonia_max":    safe_float(r.get("amonia_max")),
+            "turbidity":     safe_float(r.get("turbidity_avg")),
+            "nitrat":        safe_float(r.get("nitrat_avg")),
+            "suhu":          safe_float(r.get("suhu_avg")),
+        } for r in sensor_rows]
+
+        # ── Anomaly events (dari anomaly_log) ──────────────────────────
+        anomaly_rows = _query("""
+            SELECT tanggal_deteksi, urgency_level, is_anomaly,
+                   pollution_profile, critical_parameter,
+                   indeks_mutu, status_mutu, recommendation
+            FROM anomaly_log
+            WHERE station_id = %s
+              AND tanggal_deteksi >= DATE_SUB(NOW(), INTERVAL %s DAY)
+            ORDER BY tanggal_deteksi DESC
+        """, (station_id.upper(), days))
+
+        anomaly_events = [{
+            "tanggal":       str(r.get("tanggal_deteksi") or ""),
+            "urgency":       r.get("urgency_level") or "",
+            "is_anomaly":    bool(r.get("is_anomaly")),
+            "profil":        r.get("pollution_profile") or "",
+            "param_kritis":  r.get("critical_parameter") or "",
+            "indeks":        safe_float(r.get("indeks_mutu")),
+            "status":        r.get("status_mutu") or "",
+            "rekomendasi":   (r.get("recommendation") or "")[:200],
+        } for r in anomaly_rows]
+
+        # ── Statistik ringkas ──────────────────────────────────────────
+        indeks_vals = [t["indeks"] for t in trend_ika if t["indeks"] > 0]
+        stats = {
+            "indeks_min":  round(min(indeks_vals), 2) if indeks_vals else None,
+            "indeks_max":  round(max(indeks_vals), 2) if indeks_vals else None,
+            "indeks_avg":  round(sum(indeks_vals)/len(indeks_vals), 2) if indeks_vals else None,
+            "days_data":   len(trend_ika),
+            "sensor_days": len(trend_sensor),
+            "anomaly_count": len([a for a in anomaly_events if a["is_anomaly"]]),
+        }
+
+        return {
+            "station_id":    info.get("station_id", station_id),
+            "station_name":  info.get("station_name") or "",
+            "das":           info.get("nama_das") or "",
+            "provinsi":      info.get("provinsi") or "",
+            "kabkot":        info.get("kabkot") or "",
+            "kecamatan":     info.get("kecamatan") or "",
+            "latitude":      safe_float(info.get("latitude")),
+            "longitude":     safe_float(info.get("longitude")),
+            "status_terkini":  info.get("status_terkini") or "–",
+            "indeks_terkini":  safe_float(info.get("indeks_terkini")),
+            "status_warna":    info.get("status_warna") or "",
+            "tanggal_validasi": str(info.get("tanggal_validasi") or ""),
+            "trend_ika":     trend_ika,
+            "trend_sensor":  trend_sensor,
+            "anomaly_events": anomaly_events,
+            "stats":         stats,
+            "days":          days,
+        }
+    except Exception as e:
+        logger.error(f"get_station_trend failed: {e}")
+        return {"error": str(e)}
+
+
 def get_dashboard_summary() -> dict:
     try:
         # status_warna berisi hex color (FC0004/FDF92F/02AE4E/4F81BC), bukan nama warna.
@@ -782,3 +1000,114 @@ def get_dashboard_summary() -> dict:
         logger.error(f"get_dashboard_summary: {e}")
         return {"total_stations": 0, "critical": 0, "warning": 0, "good": 0,
                 "no_status": 0, "max_rainfall_mm": 0, "sparing_langgar": 0}
+
+
+# =============================================================================
+# ANALYSIS CACHE — simpan hasil analisis agent ke MySQL
+# =============================================================================
+
+CACHE_TTL_HOURS = 24  # hasil analisis valid 24 jam
+
+
+def _make_cache_key(analysis_type: str, target_value: str) -> str:
+    from datetime import date
+    day = date.today().isoformat()
+    target = (target_value or "").strip().upper()
+    return f"{analysis_type}:{target}:{day}"
+
+
+def get_cached_analysis(analysis_type: str, target_value: str) -> Optional[dict]:
+    """Ambil hasil analisis dari cache jika masih valid."""
+    key = _make_cache_key(analysis_type, target_value)
+    try:
+        rows = _query(
+            "SELECT * FROM analysis_cache WHERE cache_key = %s AND expires_at > NOW()",
+            (key,)
+        )
+        if not rows:
+            return None
+        row = rows[0]
+        result = json.loads(row["result_json"])
+        result["_from_cache"] = True
+        result["_cached_at"]  = str(row["created_at"])
+        result["_elapsed_sec"] = row["elapsed_sec"]
+        result["_cache_key"]  = key
+        logger.info(f"Cache HIT: {key} ({row['elapsed_sec']}s saved)")
+        return result
+    except Exception as e:
+        logger.error(f"get_cached_analysis failed: {e}")
+        return None
+
+
+def save_cached_analysis(
+    analysis_type: str,
+    target_value: str,
+    result: dict,
+    elapsed_sec: int,
+) -> bool:
+    """Simpan hasil analisis ke cache."""
+    key = _make_cache_key(analysis_type, target_value)
+    try:
+        # Hapus key yang akan distrip — tidak perlu kirim field internal
+        clean = {k: v for k, v in result.items()
+                 if not k.startswith("_")}
+        station_count = len(
+            (result.get("analysis_raw") or {}).get("anomalous_stations", [])
+        )
+        _execute("""
+            INSERT INTO analysis_cache
+                (cache_key, analysis_type, target_value, expires_at, elapsed_sec, station_count, result_json)
+            VALUES (%s, %s, %s, DATE_ADD(NOW(), INTERVAL %s HOUR), %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                created_at   = NOW(),
+                expires_at   = DATE_ADD(NOW(), INTERVAL %s HOUR),
+                elapsed_sec  = VALUES(elapsed_sec),
+                station_count= VALUES(station_count),
+                result_json  = VALUES(result_json)
+        """, (
+            key, analysis_type, target_value or "",
+            CACHE_TTL_HOURS, elapsed_sec, station_count,
+            json.dumps(clean, ensure_ascii=False, default=str),
+            CACHE_TTL_HOURS,
+        ))
+        logger.info(f"Cache SAVED: {key}")
+        return True
+    except Exception as e:
+        logger.error(f"save_cached_analysis failed: {e}")
+        return False
+
+
+def list_analysis_cache() -> list[dict]:
+    """List semua cache yang masih valid."""
+    try:
+        rows = _query("""
+            SELECT cache_key, analysis_type, target_value,
+                   created_at, expires_at, elapsed_sec, station_count
+            FROM analysis_cache
+            WHERE expires_at > NOW()
+            ORDER BY created_at DESC
+            LIMIT 50
+        """)
+        return [{
+            "cache_key":     r["cache_key"],
+            "analysis_type": r["analysis_type"],
+            "target_value":  r["target_value"] or "semua stasiun",
+            "created_at":    str(r["created_at"]),
+            "expires_at":    str(r["expires_at"]),
+            "elapsed_sec":   r["elapsed_sec"],
+            "station_count": r["station_count"],
+        } for r in rows]
+    except Exception as e:
+        logger.error(f"list_analysis_cache: {e}")
+        return []
+
+
+def invalidate_analysis_cache() -> int:
+    """Hapus semua cache (dipanggil setelah ETL selesai)."""
+    try:
+        _execute("DELETE FROM analysis_cache WHERE 1=1")
+        logger.info("Analysis cache invalidated (ETL completed)")
+        return 1
+    except Exception as e:
+        logger.error(f"invalidate_analysis_cache: {e}")
+        return 0

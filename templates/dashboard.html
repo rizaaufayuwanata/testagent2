@@ -106,6 +106,12 @@ body {
 .kpi-val { font-size: 1.75rem; font-weight: 700; line-height: 1; }
 .kpi-label { font-size: .7rem; opacity: .88; margin-top: 2px; font-weight: 500; }
 
+.kpi-clickable { cursor: pointer; position: relative; }
+.kpi-clickable:active { transform: translateY(0) scale(.98); }
+.kpi-arrow { position:absolute; right:10px; top:50%; transform:translateY(-50%);
+  font-size:.85rem; opacity:.5; transition: opacity .15s, right .15s; }
+.kpi-clickable:hover .kpi-arrow { opacity:1; right:7px; }
+
 .kpi-stations  { background: linear-gradient(135deg, #1d6fa4, #0093c4); }
 .kpi-critical  { background: linear-gradient(135deg, #c0392b, #e74c3c); }
 .kpi-warning   { background: linear-gradient(135deg, #d4830a, #f39c12); }
@@ -246,6 +252,81 @@ body {
   white-space: pre-wrap; word-break: break-word;
   max-height: 300px; overflow-y: auto;
 }
+/* ── Narasi Think Blocks ──────────────────────────────────────────── */
+#narrative-content { display:flex; flex-direction:column; gap:.5rem; }
+
+.nar-think-block {
+  border-radius: 10px; overflow: hidden;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow .15s;
+}
+.nar-think-block:hover { box-shadow: var(--shadow-md); }
+
+.nar-think-header {
+  display: flex; align-items: center; gap: .65rem;
+  padding: .65rem 1rem; cursor: pointer;
+  transition: background .12s;
+  user-select: none;
+}
+.nar-think-header:hover { filter: brightness(.97); }
+
+/* Warna header per tipe step */
+.nar-think-block.type-plan     .nar-think-header { background: #eef2ff; border-bottom: 1px solid #c7d2fe; }
+.nar-think-block.type-analyze  .nar-think-header { background: #f0fdf4; border-bottom: 1px solid #bbf7d0; }
+.nar-think-block.type-conclude .nar-think-header { background: #fff7ed; border-bottom: 1px solid #fed7aa; }
+.nar-think-block.type-warn     .nar-think-header { background: #fef2f2; border-bottom: 1px solid #fecaca; }
+.nar-think-block.type-default  .nar-think-header { background: #f8fafc; border-bottom: 1px solid var(--border); }
+
+/* Saat collapsed, hapus border-bottom header */
+.nar-think-block.collapsed .nar-think-header { border-bottom-color: transparent; }
+
+.nar-step-num {
+  width: 26px; height: 26px; border-radius: 50%;
+  font-size: .7rem; font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; color: #fff;
+}
+.nar-think-block.type-plan     .nar-step-num { background: #6366f1; }
+.nar-think-block.type-analyze  .nar-step-num { background: #16a34a; }
+.nar-think-block.type-conclude .nar-step-num { background: #ea580c; }
+.nar-think-block.type-warn     .nar-step-num { background: #dc2626; }
+.nar-think-block.type-default  .nar-step-num { background: var(--navy); }
+
+.nar-step-label {
+  font-size: .65rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .5px; padding: 2px 7px; border-radius: 10px;
+  flex-shrink: 0;
+}
+.nar-think-block.type-plan     .nar-step-label { background:#e0e7ff; color:#4338ca; }
+.nar-think-block.type-analyze  .nar-step-label { background:#dcfce7; color:#15803d; }
+.nar-think-block.type-conclude .nar-step-label { background:#ffedd5; color:#c2410c; }
+.nar-think-block.type-warn     .nar-step-label { background:#fee2e2; color:#b91c1c; }
+.nar-think-block.type-default  .nar-step-label { background:#f1f5f9; color:var(--navy); }
+
+.nar-think-title {
+  flex: 1; font-size: .8rem; font-weight: 600;
+  color: var(--text); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.nar-chevron {
+  font-size: .8rem; color: var(--text-muted);
+  transition: transform .2s; flex-shrink: 0;
+}
+.nar-think-block:not(.collapsed) .nar-chevron { transform: rotate(180deg); }
+
+.nar-think-body {
+  padding: .85rem 1.05rem;
+  font-size: .8rem; line-height: 1.8;
+  color: var(--text);
+  white-space: pre-wrap; word-break: break-word;
+  max-height: 280px; overflow-y: auto;
+  background: #fff;
+  border-top: none;
+}
+.nar-think-body::-webkit-scrollbar { width: 4px; }
+.nar-think-body::-webkit-scrollbar-track { background: #f1f5f9; }
+.nar-think-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 .nar-header { color: var(--navy); font-weight: 700; display: block;
   border-bottom: 1px solid var(--border); padding-bottom: 4px; margin-bottom: 6px; }
 .nar-station { color: var(--blue); font-weight: 700; }
@@ -317,6 +398,23 @@ footer {
 .modal-header { background: var(--navy); color: #fff; border-radius: var(--radius) var(--radius) 0 0; }
 .modal-header .btn-close { filter: invert(1); }
 #detail-body { max-height: 70vh; overflow-y: auto; }
+/* KPI Modal */
+#kpi-modal .modal-dialog { max-width: 1100px; }
+#kpi-modal .modal-header { padding: .8rem 1.25rem; }
+#kpi-modal-search::placeholder { color: rgba(255,255,255,.5); }
+#kpi-modal-search:focus { background:rgba(255,255,255,.25)!important;
+  border-color:rgba(255,255,255,.6)!important; color:#fff!important; box-shadow:none!important; }
+.kpi-modal-header-critical  { background: linear-gradient(135deg,#c0392b,#e74c3c)!important; }
+.kpi-modal-header-warning   { background: linear-gradient(135deg,#d4830a,#f39c12)!important; }
+.kpi-modal-header-good      { background: linear-gradient(135deg,#0a8a4e,#1abc9c)!important; }
+.kpi-modal-header-nostatus  { background: linear-gradient(135deg,#495057,#6c757d)!important; }
+.kpi-modal-header-all       { background: linear-gradient(135deg,#1d6fa4,#0093c4)!important; }
+.stat-pill { display:inline-flex; align-items:center; gap:5px; padding:3px 10px;
+  border-radius:20px; font-size:.72rem; font-weight:600; }
+.sort-active { color: var(--blue) !important; }
+.kpi-station-row:hover { background:#f0f9ff!important; cursor:pointer; }
+.param-badge { font-size:.65rem; padding:2px 6px; border-radius:8px;
+  background:#f1f5f9; color:var(--text-muted); font-weight:600; }
 
 /* ── Misc Badges ─────────────────────────────────────────────────────── */
 .badge-status {
@@ -352,40 +450,45 @@ footer {
 
 <!-- ═══ KPI CARDS ═══ -->
 <div class="kpi-grid mb-4">
-  <div class="kpi-card kpi-stations">
+  <div class="kpi-card kpi-stations kpi-clickable" onclick="openKpiModal('all','Semua Stasiun Aktif')">
     <div class="kpi-icon-wrap"><i class="bi bi-broadcast"></i></div>
     <div class="kpi-info">
       <div class="kpi-val" id="kpi-stations">–</div>
       <div class="kpi-label">Stasiun Aktif</div>
     </div>
+    <i class="bi bi-chevron-right kpi-arrow"></i>
   </div>
-  <div class="kpi-card kpi-critical">
+  <div class="kpi-card kpi-critical kpi-clickable" onclick="openKpiModal('critical','Stasiun Cemar Berat')">
     <div class="kpi-icon-wrap"><i class="bi bi-exclamation-triangle-fill"></i></div>
     <div class="kpi-info">
       <div class="kpi-val" id="kpi-critical">–</div>
       <div class="kpi-label">Cemar Berat</div>
     </div>
+    <i class="bi bi-chevron-right kpi-arrow"></i>
   </div>
-  <div class="kpi-card kpi-warning">
+  <div class="kpi-card kpi-warning kpi-clickable" onclick="openKpiModal('warning','Stasiun Cemar Sedang / Ringan')">
     <div class="kpi-icon-wrap"><i class="bi bi-exclamation-circle-fill"></i></div>
     <div class="kpi-info">
       <div class="kpi-val" id="kpi-warning">–</div>
       <div class="kpi-label">Cemar Sedang/Ringan</div>
     </div>
+    <i class="bi bi-chevron-right kpi-arrow"></i>
   </div>
-  <div class="kpi-card kpi-good">
+  <div class="kpi-card kpi-good kpi-clickable" onclick="openKpiModal('good','Stasiun Memenuhi Baku Mutu')">
     <div class="kpi-icon-wrap"><i class="bi bi-check-circle-fill"></i></div>
     <div class="kpi-info">
       <div class="kpi-val" id="kpi-good">–</div>
       <div class="kpi-label">Memenuhi Baku Mutu</div>
     </div>
+    <i class="bi bi-chevron-right kpi-arrow"></i>
   </div>
-  <div class="kpi-card kpi-nostatus">
+  <div class="kpi-card kpi-nostatus kpi-clickable" onclick="openKpiModal('nostatus','Stasiun Tidak Diketahui')">
     <div class="kpi-icon-wrap"><i class="bi bi-question-circle-fill"></i></div>
     <div class="kpi-info">
       <div class="kpi-val" id="kpi-nostatus">–</div>
       <div class="kpi-label">Tidak Diketahui</div>
     </div>
+    <i class="bi bi-chevron-right kpi-arrow"></i>
   </div>
   <div class="kpi-card kpi-rain">
     <div class="kpi-icon-wrap"><i class="bi bi-cloud-rain-fill"></i></div>
@@ -405,6 +508,24 @@ footer {
       <div class="card-title-bar">
         <div class="title"><i class="bi bi-robot"></i> Analisis Agent</div>
         <div id="analysis-status" class="small text-muted d-flex align-items-center gap-1"></div>
+      </div>
+
+      <!-- Cache info banner -->
+      <div id="cache-banner" class="d-none mx-3 mb-1 p-2 rounded d-flex align-items-center justify-content-between"
+        style="background:#e8f4fd;border:1px solid #bee3f8;font-size:.78rem">
+        <span><i class="bi bi-clock-history me-1 text-primary"></i>
+          <span id="cache-info-text"></span>
+        </span>
+        <div class="d-flex gap-1">
+          <button class="btn btn-primary btn-sm py-0 px-2" style="font-size:.72rem"
+            id="btn-use-cache" onclick="useCache()">
+            <i class="bi bi-lightning-fill me-1"></i>Gunakan Hasil Ini
+          </button>
+          <button class="btn btn-outline-secondary btn-sm py-0 px-2" style="font-size:.72rem"
+            onclick="startAnalysisForce()">
+            <i class="bi bi-arrow-clockwise me-1"></i>Analisis Ulang
+          </button>
+        </div>
       </div>
 
       <!-- Tombol Analisis -->
@@ -701,6 +822,202 @@ footer {
 
 </div><!-- end page-wrapper -->
 
+<!-- ═══ KPI STATION MODAL ═══ -->
+<div class="modal fade" id="kpi-modal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header" id="kpi-modal-header">
+        <div>
+          <h6 class="modal-title fw-bold mb-0" id="kpi-modal-title">–</h6>
+          <div class="text-white-50 small" id="kpi-modal-subtitle"></div>
+        </div>
+        <div class="d-flex align-items-center gap-2 ms-auto me-3">
+          <input type="text" class="form-control form-control-sm"
+            id="kpi-modal-search" placeholder="Cari stasiun, lokasi…"
+            style="width:200px;background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.3);color:#fff"
+            oninput="filterKpiTable()">
+        </div>
+        <button class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-0">
+        <!-- Summary bar -->
+        <div class="d-flex gap-4 px-4 py-2 border-bottom" id="kpi-modal-summary"
+          style="background:#f8fafc;font-size:.78rem;color:var(--text-muted)"></div>
+        <!-- Table -->
+        <div style="overflow-x:auto">
+          <table class="table data-table mb-0" id="kpi-station-table">
+            <thead>
+              <tr>
+                <th style="cursor:pointer" onclick="sortKpiTable('station_id')">
+                  Stasiun <i class="bi bi-arrow-down-up ms-1" style="font-size:.65rem"></i>
+                </th>
+                <th>Status</th>
+                <th style="cursor:pointer" onclick="sortKpiTable('indeks_mutu')">
+                  Indeks <i class="bi bi-arrow-down-up ms-1" style="font-size:.65rem"></i>
+                </th>
+                <th>Param Kritis</th>
+                <th style="cursor:pointer" onclick="sortKpiTable('cod')">COD</th>
+                <th style="cursor:pointer" onclick="sortKpiTable('bod')">BOD</th>
+                <th style="cursor:pointer" onclick="sortKpiTable('do')">DO</th>
+                <th style="cursor:pointer" onclick="sortKpiTable('ph')">pH</th>
+                <th style="cursor:pointer" onclick="sortKpiTable('tss')">TSS</th>
+                <th style="cursor:pointer" onclick="sortKpiTable('kabkot')">Lokasi</th>
+                <th>Update</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="kpi-modal-body">
+              <tr><td colspan="12" class="text-center py-4 text-muted">
+                <span class="spinner-border spinner-border-sm me-2"></span>Memuat…
+              </td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ TREND MODAL ═══ -->
+<div class="modal fade" id="trend-modal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+
+      <!-- Header -->
+      <div class="modal-header" style="background:linear-gradient(135deg,#0f2744,#1d6fa4)">
+        <div class="flex-grow-1">
+          <div class="d-flex align-items-center gap-2 mb-1">
+            <span class="badge bg-light text-dark" id="trend-station-id" style="font-size:.8rem"></span>
+            <h6 class="modal-title fw-bold text-white mb-0" id="trend-station-name">–</h6>
+          </div>
+          <div style="font-size:.72rem;color:rgba(255,255,255,.65)" id="trend-station-loc"></div>
+        </div>
+        <!-- Rentang hari -->
+        <div class="d-flex align-items-center gap-2 me-3">
+          <span style="color:rgba(255,255,255,.7);font-size:.75rem">Periode:</span>
+          <select id="trend-days-sel" class="form-select form-select-sm"
+            style="width:110px;background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.3);color:#fff"
+            onchange="reloadTrend()">
+            <option value="7">7 hari</option>
+            <option value="14">14 hari</option>
+            <option value="30" selected>30 hari</option>
+            <option value="60">60 hari</option>
+            <option value="90">90 hari</option>
+          </select>
+          <button class="btn btn-sm btn-outline-light" onclick="openAnalysisFromTrend()"
+            title="Analisis stasiun ini dengan agent">
+            <i class="bi bi-robot me-1"></i>Analisis
+          </button>
+        </div>
+        <button class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body p-0" id="trend-modal-body">
+        <!-- Loading -->
+        <div id="trend-loading" class="text-center py-5">
+          <div class="spinner-border text-primary mb-2"></div>
+          <div class="text-muted small">Memuat data historis…</div>
+        </div>
+        <!-- Content -->
+        <div id="trend-content" class="d-none">
+
+          <!-- Info bar -->
+          <div class="px-4 py-2 border-bottom d-flex flex-wrap gap-3 align-items-center"
+            style="background:#f8fafc;font-size:.78rem">
+            <div id="trend-status-badge"></div>
+            <span class="text-muted">|</span>
+            <span id="trend-stat-min"></span>
+            <span id="trend-stat-avg"></span>
+            <span id="trend-stat-max"></span>
+            <span class="text-muted">|</span>
+            <span id="trend-stat-days"></span>
+            <span id="trend-stat-anomaly"></span>
+          </div>
+
+          <!-- Fallback saat data terbatas (disembunyikan default) -->
+          <div id="trend-fallback" class="p-3 d-none"></div>
+
+          <div class="p-3" id="trend-charts-wrap">
+
+            <!-- Chart 1: IKA Trend -->
+            <div class="section-card p-3 mb-3">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <span style="font-weight:700;font-size:.8rem;text-transform:uppercase;
+                  letter-spacing:.5px;color:var(--navy)">
+                  <i class="bi bi-graph-up me-1 text-primary"></i>Tren Indeks Kualitas Air (IKA)
+                </span>
+                <div class="d-flex gap-2" style="font-size:.72rem">
+                  <span><span style="display:inline-block;width:12px;height:3px;background:#e74c3c;vertical-align:middle;margin-right:3px"></span>Batas Cemar Sedang (3.0)</span>
+                  <span><span style="display:inline-block;width:12px;height:3px;background:#f39c12;border-top:2px dashed;vertical-align:middle;margin-right:3px"></span>Batas Cemar Berat (5.0)</span>
+                </div>
+              </div>
+              <div style="height:200px;position:relative">
+                <canvas id="chart-ika"></canvas>
+              </div>
+            </div>
+
+            <!-- Charts 2: Parameter Sensor (2x2 grid) -->
+            <div class="row g-3 mb-3">
+              <div class="col-md-6">
+                <div class="section-card p-3">
+                  <div class="mb-2 fw-bold" style="font-size:.78rem;color:var(--navy)">
+                    <i class="bi bi-droplet me-1 text-danger"></i>COD & BOD (mg/L)
+                  </div>
+                  <div style="height:160px;position:relative"><canvas id="chart-codbod"></canvas></div>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="section-card p-3">
+                  <div class="mb-2 fw-bold" style="font-size:.78rem;color:var(--navy)">
+                    <i class="bi bi-wind me-1 text-info"></i>DO & TSS (mg/L)
+                  </div>
+                  <div style="height:160px;position:relative"><canvas id="chart-dotss"></canvas></div>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="section-card p-3">
+                  <div class="mb-2 fw-bold" style="font-size:.78rem;color:var(--navy)">
+                    <i class="bi bi-activity me-1 text-warning"></i>pH
+                  </div>
+                  <div style="height:160px;position:relative"><canvas id="chart-ph"></canvas></div>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="section-card p-3">
+                  <div class="mb-2 fw-bold" style="font-size:.78rem;color:var(--navy)">
+                    <i class="bi bi-flask me-1 text-purple"></i>Amonia & Nitrat (mg/L)
+                  </div>
+                  <div style="height:160px;position:relative"><canvas id="chart-amonia"></canvas></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Anomaly events table -->
+            <div class="section-card p-3" id="trend-anomaly-section">
+              <div class="mb-2 fw-bold" style="font-size:.78rem;color:var(--navy)">
+                <i class="bi bi-journal-text me-1 text-danger"></i>
+                Riwayat Deteksi Anomali
+                <span class="badge bg-danger ms-1" id="trend-anomaly-count">0</span>
+              </div>
+              <div style="max-height:180px;overflow-y:auto">
+                <table class="table data-table mb-0">
+                  <thead>
+                    <tr><th>Waktu</th><th>Urgensi</th><th>Profil</th><th>Param Kritis</th><th>Status</th><th>Rekomendasi</th></tr>
+                  </thead>
+                  <tbody id="trend-anomaly-body">
+                    <tr><td colspan="6" class="text-center text-muted py-2">Belum ada anomali terdeteksi</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+          </div><!-- end p-3 -->
+        </div><!-- end trend-content -->
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ═══ DETAIL MODAL ═══ -->
 <div class="modal fade" id="detail-modal" tabindex="-1">
   <div class="modal-dialog modal-xl">
@@ -850,11 +1167,15 @@ async function loadOnlimo(){
     document.getElementById('onlimo-body').innerHTML=rows.map(s=>{
       const c=mc(s.status_warna,s.status);
       const badge=s.status?`<span style="color:${c};font-weight:600;font-size:.75rem">${s.status}</span>`:'–';
-      return`<tr style="cursor:pointer" onclick="map.setView([${s.latitude||0},${s.longitude||0}],13)">
-        <td><b style="font-size:.8rem">${s.station_id}</b><br>
-          <span style="font-size:.7rem;color:var(--text-muted)">${s.station_name||''}</span></td>
-        <td>${badge}</td>
-        <td><b>${fmt(s.indeks_mutu,2)}</b></td>
+      return`<tr>
+        <td onclick="openTrendModal('${s.station_id}')" style="cursor:pointer"
+          title="Lihat tren historis ${s.station_id}">
+          <b style="font-size:.8rem;color:var(--blue)">${s.station_id}</b>
+          <i class="bi bi-graph-up ms-1" style="font-size:.62rem;color:var(--text-muted)"></i>
+          <br><span style="font-size:.7rem;color:var(--text-muted)">${s.station_name||''}</span>
+        </td>
+        <td style="cursor:pointer" onclick="map.setView([${s.latitude||0},${s.longitude||0}],13)">${badge}</td>
+        <td>${fmt(s.indeks_mutu,2)}</td>
         <td>${fmt(s.cod)}</td><td>${fmt(s.bod)}</td>
         <td>${fmt(s.do)}</td><td>${fmt(s.ph)}</td><td>${fmt(s.tss)}</td>
       </tr>`;
@@ -1005,10 +1326,628 @@ async function loadAnomalyLog(){
   }catch(e){console.error(e)}
 }
 
+// ── Trend Modal ───────────────────────────────────────────────────────
+let _trendStationId = '';
+let _chartIka=null, _chartCodBod=null, _chartDoTss=null, _chartPh=null, _chartAmonia=null;
+
+function _destroyTrendCharts(){
+  [_chartIka,_chartCodBod,_chartDoTss,_chartPh,_chartAmonia].forEach(c=>{if(c)c.destroy();});
+  _chartIka=_chartCodBod=_chartDoTss=_chartPh=_chartAmonia=null;
+}
+
+async function openTrendModal(stationId){
+  _trendStationId = stationId;
+  document.getElementById('trend-station-id').textContent = stationId;
+  document.getElementById('trend-station-name').textContent = '…';
+  document.getElementById('trend-station-loc').textContent = '';
+  document.getElementById('trend-loading').classList.remove('d-none');
+  document.getElementById('trend-content').classList.add('d-none');
+  _destroyTrendCharts();
+
+  const modal = new bootstrap.Modal(document.getElementById('trend-modal'));
+  modal.show();
+  await _loadTrendData(stationId);
+}
+
+async function reloadTrend(){
+  if(!_trendStationId) return;
+  document.getElementById('trend-loading').classList.remove('d-none');
+  document.getElementById('trend-content').classList.add('d-none');
+  _destroyTrendCharts();
+  await _loadTrendData(_trendStationId);
+}
+
+async function _loadTrendData(stationId){
+  const days = document.getElementById('trend-days-sel').value || 30;
+  try{
+    const r = await fetch(`/api/station-trend/${stationId}?days=${days}`);
+    const d = await r.json();
+    if(d.error) throw new Error(d.error);
+    _renderTrend(d);
+  }catch(e){
+    document.getElementById('trend-loading').innerHTML =
+      `<div class="text-danger py-4 text-center">${e.message}</div>`;
+  }
+}
+
+function _renderTrend(d){
+  // Reset: sembunyikan fallback, tampilkan charts
+  document.getElementById('trend-fallback').classList.add('d-none');
+  document.getElementById('trend-fallback').innerHTML = '';
+  document.getElementById('trend-charts-wrap').classList.remove('d-none');
+
+  // Header info
+  document.getElementById('trend-station-id').textContent   = d.station_id;
+  document.getElementById('trend-station-name').textContent = d.station_name || d.station_id;
+  document.getElementById('trend-station-loc').textContent  =
+    [d.kecamatan, d.kabkot, d.das].filter(Boolean).join(' · ');
+
+  // Status badge
+  const c = mc(d.status_warna, d.status_terkini);
+  document.getElementById('trend-status-badge').innerHTML =
+    `<span style="color:${c};font-weight:700">${d.status_terkini}</span>
+     <span class="text-muted ms-1">(indeks terkini: ${fmt(d.indeks_terkini,2)})</span>`;
+
+  // Stats
+  const s = d.stats || {};
+  document.getElementById('trend-stat-min').innerHTML =
+    s.indeks_min!=null ? `Min: <b>${s.indeks_min}</b>` : '';
+  document.getElementById('trend-stat-avg').innerHTML =
+    s.indeks_avg!=null ? `Rata-rata: <b>${s.indeks_avg}</b>` : '';
+  document.getElementById('trend-stat-max').innerHTML =
+    s.indeks_max!=null ? `Maks: <b style="color:${s.indeks_max>=5?'var(--red)':s.indeks_max>=3?'var(--yellow)':'var(--green)'}">${s.indeks_max}</b>` : '';
+  document.getElementById('trend-stat-days').textContent =
+    `${s.days_data||0} hari data IKA`;
+  document.getElementById('trend-anomaly-count').textContent = s.anomaly_count || 0;
+
+  // ── Periksa kecukupan data ────────────────────────────────────────
+  const hasIka    = d.trend_ika.length > 0;
+  const hasSensor = d.trend_sensor.length > 0;
+  const isSparse  = d.trend_ika.length < 3 || d.trend_sensor.length < 3;
+
+  if(isSparse){
+    _renderSparseFallback(d);
+    document.getElementById('trend-loading').classList.add('d-none');
+    document.getElementById('trend-content').classList.remove('d-none');
+    return;
+  }
+
+  // Chart data prep
+  const ikaLabels = d.trend_ika.map(t=>t.tanggal.slice(5));  // MM-DD
+  const ikaVals   = d.trend_ika.map(t=>t.indeks||null);
+  const ikaColors = d.trend_ika.map(t=>{
+    const v = t.indeks;
+    if(!v) return 'rgba(156,163,175,.5)';
+    if(v>=5)  return 'rgba(230,57,70,.9)';
+    if(v>=3)  return 'rgba(243,156,18,.9)';
+    return 'rgba(14,173,105,.9)';
+  });
+
+  const sLabels = d.trend_sensor.map(t=>t.tanggal.slice(5));
+
+  const chartOpts = (yLabel) => ({
+    responsive:true, maintainAspectRatio:false,
+    plugins:{ legend:{ position:'bottom', labels:{ font:{size:9}, padding:8, boxWidth:10 } } },
+    scales:{
+      x:{ grid:{display:false}, ticks:{font:{size:8}, maxRotation:45} },
+      y:{ grid:{color:'#f1f5f9'}, ticks:{font:{size:8}},
+          title:{ display:!!yLabel, text:yLabel, font:{size:8} } }
+    }
+  });
+
+  // ── Chart 1: IKA ──────────────────────────────────────────────────
+  const ctxIka = document.getElementById('chart-ika').getContext('2d');
+  _chartIka = new Chart(ctxIka,{
+    type:'bar',
+    data:{
+      labels: ikaLabels,
+      datasets:[{
+        label:'Indeks Mutu Air',
+        data: ikaVals,
+        backgroundColor: ikaColors,
+        borderRadius: 4, borderSkipped:false,
+      },{
+        label:'Threshold Cemar Sedang (3.0)',
+        data: Array(ikaLabels.length).fill(3.0),
+        type:'line', borderColor:'#e74c3c', borderWidth:1.5,
+        borderDash:[4,3], pointRadius:0, fill:false,
+      },{
+        label:'Threshold Cemar Berat (5.0)',
+        data: Array(ikaLabels.length).fill(5.0),
+        type:'line', borderColor:'#f39c12', borderWidth:1.5,
+        borderDash:[4,3], pointRadius:0, fill:false,
+      }]
+    },
+    options:{...chartOpts('Indeks'),
+      plugins:{...chartOpts().plugins,
+        annotation:{},
+        tooltip:{callbacks:{label:ctx=>`Indeks: ${ctx.parsed.y?.toFixed(2)||'–'}`}}
+      }
+    }
+  });
+
+  // ── Chart 2: COD & BOD ────────────────────────────────────────────
+  const ctxCB = document.getElementById('chart-codbod').getContext('2d');
+  _chartCodBod = new Chart(ctxCB,{
+    type:'line',
+    data:{
+      labels: sLabels,
+      datasets:[
+        { label:'COD avg', data:d.trend_sensor.map(t=>t.cod||null),
+          borderColor:'#e74c3c', backgroundColor:'rgba(230,57,70,.1)',
+          borderWidth:2, pointRadius:2, fill:true, tension:.3 },
+        { label:'BOD avg', data:d.trend_sensor.map(t=>t.bod||null),
+          borderColor:'#6366f1', backgroundColor:'rgba(99,102,241,.08)',
+          borderWidth:2, pointRadius:2, fill:false, tension:.3 },
+      ]
+    },
+    options: chartOpts('mg/L')
+  });
+
+  // ── Chart 3: DO & TSS ─────────────────────────────────────────────
+  const ctxDT = document.getElementById('chart-dotss').getContext('2d');
+  _chartDoTss = new Chart(ctxDT,{
+    type:'line',
+    data:{
+      labels: sLabels,
+      datasets:[
+        { label:'DO avg', data:d.trend_sensor.map(t=>t.do||null),
+          borderColor:'#0ea5e9', borderWidth:2, pointRadius:2, tension:.3, fill:false },
+        { label:'TSS avg', data:d.trend_sensor.map(t=>t.tss||null),
+          borderColor:'#8b5cf6', borderWidth:2, pointRadius:2, tension:.3, fill:false },
+      ]
+    },
+    options: chartOpts('mg/L')
+  });
+
+  // ── Chart 4: pH ───────────────────────────────────────────────────
+  const ctxPh = document.getElementById('chart-ph').getContext('2d');
+  _chartPh = new Chart(ctxPh,{
+    type:'line',
+    data:{
+      labels: sLabels,
+      datasets:[
+        { label:'pH avg', data:d.trend_sensor.map(t=>t.ph||null),
+          borderColor:'#16a34a', backgroundColor:'rgba(22,163,74,.08)',
+          borderWidth:2, pointRadius:2, fill:true, tension:.3 },
+        { label:'pH batas bawah (6)', data:Array(sLabels.length).fill(6),
+          borderColor:'#f59e0b', borderDash:[3,3], borderWidth:1, pointRadius:0, fill:false },
+        { label:'pH batas atas (9)', data:Array(sLabels.length).fill(9),
+          borderColor:'#f59e0b', borderDash:[3,3], borderWidth:1, pointRadius:0, fill:false },
+      ]
+    },
+    options:{...chartOpts('pH'),
+      scales:{...chartOpts().scales, y:{...chartOpts().scales?.y,
+        min:0, max:14,
+        grid:{color:'#f1f5f9'}, ticks:{font:{size:8}}
+      }}
+    }
+  });
+
+  // ── Chart 5: Amonia & Nitrat ──────────────────────────────────────
+  const ctxAm = document.getElementById('chart-amonia').getContext('2d');
+  _chartAmonia = new Chart(ctxAm,{
+    type:'line',
+    data:{
+      labels: sLabels,
+      datasets:[
+        { label:'Amonia avg', data:d.trend_sensor.map(t=>t.amonia||null),
+          borderColor:'#dc2626', borderWidth:2, pointRadius:2, tension:.3, fill:false },
+        { label:'Nitrat avg', data:d.trend_sensor.map(t=>t.nitrat||null),
+          borderColor:'#9333ea', borderWidth:2, pointRadius:2, tension:.3, fill:false },
+      ]
+    },
+    options: chartOpts('mg/L')
+  });
+
+  // ── Anomaly table ─────────────────────────────────────────────────
+  const urgColor = u => u==='TINDAK'?'#e74c3c':u==='WASPADA'?'#f39c12':'#0ead69';
+  document.getElementById('trend-anomaly-body').innerHTML = d.anomaly_events.length
+    ? d.anomaly_events.map(a=>`
+        <tr>
+          <td style="white-space:nowrap;font-size:.72rem">${a.tanggal.replace('T',' ').slice(0,16)}</td>
+          <td><span style="color:${urgColor(a.urgency)};font-weight:700;font-size:.75rem">${a.urgency||'–'}</span></td>
+          <td><span class="badge bg-secondary" style="font-size:.65rem">${a.profil||'–'}</span></td>
+          <td style="font-size:.73rem">${a.param_kritis||'–'}</td>
+          <td style="font-size:.73rem;color:${urgColor(a.urgency)}">${a.status||'–'}</td>
+          <td style="font-size:.72rem;color:var(--text-muted);max-width:200px;
+            overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${a.rekomendasi}">
+            ${a.rekomendasi||'–'}
+          </td>
+        </tr>`).join('')
+    : '<tr><td colspan="6" class="text-center text-muted py-2 small">Belum ada anomali terdeteksi dalam periode ini</td></tr>';
+
+  // Tampilkan
+  document.getElementById('trend-loading').classList.add('d-none');
+  document.getElementById('trend-content').classList.remove('d-none');
+}
+
+function _renderSparseFallback(d){
+  const ikaCount    = d.trend_ika.length;
+  const sensorCount = d.trend_sensor.length;
+  const days        = d.days || 30;
+
+  // Bangun HTML fallback — tampilkan data yang ada dalam tabel
+  let html = `
+  <div class="p-3">
+
+    <!-- Warning banner -->
+    <div class="alert d-flex gap-3 align-items-start mb-3"
+      style="background:#fff8e1;border:1px solid #fcd34d;border-radius:10px">
+      <i class="bi bi-exclamation-triangle-fill text-warning" style="font-size:1.5rem;margin-top:2px;flex-shrink:0"></i>
+      <div>
+        <div class="fw-bold mb-1">Data historis belum cukup untuk menampilkan grafik trend</div>
+        <div class="small text-muted mb-2">
+          Dalam periode <b>${days} hari</b> terakhir, stasiun <b>${d.station_id}</b> hanya memiliki:
+          <b>${ikaCount}</b> data indeks mutu dan <b>${sensorCount}</b> hari data sensor.
+          Grafik membutuhkan minimal <b>3 titik data</b>.
+        </div>
+        <div class="small fw-bold mb-1">Cara mendapatkan lebih banyak data historis:</div>
+        <ol class="small mb-2" style="padding-left:1.2rem">
+          <li>Buka <a href="/admin/etl" target="_blank"><b>Admin ETL</b></a></li>
+          <li>Pilih <b>Onlimo → Monitoring</b>, pilih stasiun <b>${d.station_id}</b></li>
+          <li>Set rentang hari ke <b>30–90 hari</b>, lalu klik Sync</li>
+          <li>Ulangi untuk <b>Onlimo → Status/Indeks</b></li>
+        </ol>
+        <a href="/admin/etl" target="_blank" class="btn btn-warning btn-sm">
+          <i class="bi bi-cloud-download me-1"></i>Buka Admin ETL
+        </a>
+      </div>
+    </div>`;
+
+  // Tampilkan data IKA yang ada (meski sedikit)
+  if(ikaCount > 0){
+    html += `
+    <div class="section-card p-3 mb-3">
+      <div class="fw-bold mb-2" style="font-size:.8rem;color:var(--navy)">
+        <i class="bi bi-table me-1 text-primary"></i>Data Indeks Mutu Air (${ikaCount} record)
+      </div>
+      <table class="table table-sm data-table mb-0">
+        <thead><tr><th>Tanggal</th><th>Indeks</th><th>Status</th><th>Parameter Kritis</th></tr></thead>
+        <tbody>
+          ${d.trend_ika.map(t=>{
+            const v = t.indeks;
+            const c = v>=5?'#e74c3c':v>=3?'#f39c12':v>0?'#0ead69':'#6c757d';
+            const badge = v>0
+              ? `<div style="display:inline-flex;align-items:center;gap:6px">
+                   <div style="width:36px;height:8px;border-radius:4px;
+                     background:linear-gradient(to right,${c} ${Math.min(v/7*100,100)}%,#e2e8f0 0%)">
+                   </div>
+                   <b style="color:${c}">${v.toFixed(2)}</b>
+                 </div>`
+              : '<span class="text-muted">–</span>';
+            return `<tr>
+              <td>${t.tanggal}</td>
+              <td>${badge}</td>
+              <td style="color:${c};font-weight:600;font-size:.78rem">${t.status||'–'}</td>
+              <td style="font-size:.75rem">${t.param_kritis||'–'}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>`;
+  }
+
+  // Tampilkan data sensor yang ada
+  if(sensorCount > 0){
+    html += `
+    <div class="section-card p-3 mb-3">
+      <div class="fw-bold mb-2" style="font-size:.8rem;color:var(--navy)">
+        <i class="bi bi-activity me-1 text-success"></i>Data Sensor (${sensorCount} hari, rata-rata harian)
+      </div>
+      <div style="overflow-x:auto">
+        <table class="table table-sm data-table mb-0">
+          <thead>
+            <tr><th>Tanggal</th><th>Pembacaan</th>
+              <th>DO<br><small>mg/L</small></th>
+              <th>pH</th>
+              <th>COD<br><small>mg/L</small></th>
+              <th>BOD<br><small>mg/L</small></th>
+              <th>TSS<br><small>mg/L</small></th>
+              <th>Amonia<br><small>mg/L</small></th>
+              <th>Nitrat<br><small>mg/L</small></th>
+              <th>Suhu<br><small>°C</small></th>
+              <th>Turbidity<br><small>NTU</small></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${d.trend_sensor.map(s=>{
+              const pv = (v,warn,crit) => {
+                if(!v || v===0) return '<span class="text-muted">–</span>';
+                const color = crit&&v>=crit?'#e74c3c':warn&&v>=warn?'#f39c12':'inherit';
+                return `<b style="color:${color}">${v.toFixed(1)}</b>`;
+              };
+              return `<tr>
+                <td style="white-space:nowrap">${s.tanggal}</td>
+                <td class="text-center"><span class="badge bg-secondary">${s.n}</span></td>
+                <td class="text-end">${pv(s.do, 3, null)}</td>
+                <td class="text-end">${pv(s.ph, null, null)}</td>
+                <td class="text-end">${pv(s.cod, 25, 50)}</td>
+                <td class="text-end">${pv(s.bod, 6, 12)}</td>
+                <td class="text-end">${pv(s.tss, 50, 400)}</td>
+                <td class="text-end">${pv(s.amonia, 0.5, 2)}</td>
+                <td class="text-end">${pv(s.nitrat, 10, 20)}</td>
+                <td class="text-end">${pv(s.suhu, null, null)}</td>
+                <td class="text-end">${pv(s.turbidity, 50, 400)}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+  }
+
+  // Anomaly log jika ada
+  if(d.anomaly_events && d.anomaly_events.length > 0){
+    html += `<div class="section-card p-3">
+      <div class="fw-bold mb-2" style="font-size:.8rem;color:var(--navy)">
+        <i class="bi bi-journal-text me-1 text-danger"></i>Riwayat Deteksi Anomali
+      </div>
+      <table class="table data-table table-sm mb-0">
+        <thead><tr><th>Waktu</th><th>Urgensi</th><th>Profil</th><th>Status</th></tr></thead>
+        <tbody>
+          ${d.anomaly_events.map(a=>{
+            const c=a.urgency==='TINDAK'?'#e74c3c':a.urgency==='WASPADA'?'#f39c12':'#0ead69';
+            return `<tr>
+              <td style="font-size:.72rem">${a.tanggal.replace('T',' ').slice(0,16)}</td>
+              <td><b style="color:${c}">${a.urgency||'–'}</b></td>
+              <td><span class="badge bg-secondary" style="font-size:.65rem">${a.profil||'–'}</span></td>
+              <td style="font-size:.73rem">${a.status||'–'}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>`;
+  }
+
+  html += '</div>';
+
+  // Tampilkan fallback, sembunyikan charts
+  document.getElementById('trend-fallback').innerHTML = html;
+  document.getElementById('trend-fallback').classList.remove('d-none');
+  document.getElementById('trend-charts-wrap').classList.add('d-none');
+}
+
+function openAnalysisFromTrend(){
+  bootstrap.Modal.getInstance(document.getElementById('trend-modal'))?.hide();
+  setTimeout(()=>{
+    if(_stationSelect) _stationSelect.setValue(_trendStationId, true);
+    startAnalysis('station', _trendStationId, false, false);
+  }, 400);
+}
+
+// ── KPI Modal ─────────────────────────────────────────────────────────
+let _kpiData = [], _kpiSort = { col: 'indeks_mutu', asc: false };
+
+const KPI_META = {
+  all:      { label:'Semua Stasiun',         cls:'all' },
+  critical: { label:'Cemar Berat',           cls:'critical' },
+  warning:  { label:'Cemar Sedang/Ringan',   cls:'warning' },
+  good:     { label:'Memenuhi Baku Mutu',    cls:'good' },
+  nostatus: { label:'Tidak Diketahui',       cls:'nostatus' },
+};
+
+async function openKpiModal(category, title) {
+  const meta = KPI_META[category] || KPI_META.all;
+  const header = document.getElementById('kpi-modal-header');
+  header.className = `modal-header kpi-modal-header-${meta.cls}`;
+  document.getElementById('kpi-modal-title').textContent = title;
+  document.getElementById('kpi-modal-subtitle').textContent = 'Memuat data…';
+  document.getElementById('kpi-modal-body').innerHTML =
+    '<tr><td colspan="12" class="text-center py-4 text-muted"><span class="spinner-border spinner-border-sm me-2"></span>Memuat…</td></tr>';
+  document.getElementById('kpi-modal-summary').innerHTML = '';
+  document.getElementById('kpi-modal-search').value = '';
+
+  const modal = new bootstrap.Modal(document.getElementById('kpi-modal'));
+  modal.show();
+
+  try {
+    const r = await fetch('/api/stations-by-status?category=' + category);
+    _kpiData = await r.json();
+    if (_kpiData.error) throw new Error(_kpiData.error);
+    _kpiSort = { col: 'indeks_mutu', asc: false };
+    document.getElementById('kpi-modal-subtitle').textContent =
+      `${_kpiData.length} stasiun`;
+    _renderKpiSummary(_kpiData, category);
+    _renderKpiTable(_kpiData);
+  } catch(e) {
+    document.getElementById('kpi-modal-body').innerHTML =
+      `<tr><td colspan="12" class="text-center text-danger py-3">${e.message}</td></tr>`;
+  }
+}
+
+function _renderKpiSummary(data, category) {
+  const total = data.length;
+  const hasSensor = data.filter(s => s.cod > 0 || s.bod > 0 || s.ph > 0).length;
+  const noSensor  = total - hasSensor;
+  const avgIndeks = total > 0
+    ? (data.reduce((a,s)=>a+s.indeks_mutu,0)/total).toFixed(2) : '–';
+  const dasMap = {};
+  data.forEach(s => { dasMap[s.das] = (dasMap[s.das]||0)+1; });
+  const topDas = Object.entries(dasMap).sort((a,b)=>b[1]-a[1]).slice(0,3)
+    .map(([k,v])=>`${k} (${v})`).join(', ');
+
+  document.getElementById('kpi-modal-summary').innerHTML = `
+    <span class="stat-pill" style="background:#e8f4fd;color:#1d6fa4">
+      <i class="bi bi-broadcast"></i>${total} stasiun
+    </span>
+    <span class="stat-pill" style="background:#f0fdf4;color:#16a34a">
+      <i class="bi bi-activity"></i>${hasSensor} ada data sensor
+    </span>
+    ${noSensor>0?`<span class="stat-pill" style="background:#fff3cd;color:#b7770a">
+      <i class="bi bi-exclamation-triangle"></i>${noSensor} tanpa data sensor
+    </span>`:''}
+    <span class="stat-pill" style="background:#f1f5f9;color:#475569">
+      <i class="bi bi-bar-chart"></i>Rata-rata indeks: ${avgIndeks}
+    </span>
+    ${topDas?`<span class="stat-pill" style="background:#f1f5f9;color:#475569">
+      <i class="bi bi-geo"></i>${topDas}
+    </span>`:''}`;
+}
+
+function _renderKpiTable(data) {
+  const q = (document.getElementById('kpi-modal-search').value||'').toLowerCase();
+  let rows = q
+    ? data.filter(s =>
+        s.station_id.toLowerCase().includes(q) ||
+        s.station_name.toLowerCase().includes(q) ||
+        s.kabkot.toLowerCase().includes(q) ||
+        s.das.toLowerCase().includes(q))
+    : [...data];
+
+  // Sort
+  rows.sort((a,b)=>{
+    let va = a[_kpiSort.col], vb = b[_kpiSort.col];
+    if(va==null) va = _kpiSort.asc ? Infinity : -Infinity;
+    if(vb==null) vb = _kpiSort.asc ? Infinity : -Infinity;
+    if(typeof va==='string') return _kpiSort.asc ? va.localeCompare(vb) : vb.localeCompare(va);
+    return _kpiSort.asc ? va-vb : vb-va;
+  });
+
+  if(!rows.length){
+    document.getElementById('kpi-modal-body').innerHTML =
+      '<tr><td colspan="12" class="text-center py-4 text-muted">Tidak ada data</td></tr>';
+    return;
+  }
+
+  document.getElementById('kpi-modal-body').innerHTML = rows.map(s => {
+    const c = mc(s.status_warna, s.status);
+    const idx = s.indeks_mutu > 0 ? `<b>${fmt(s.indeks_mutu,2)}</b>` : '<span class="text-muted">–</span>';
+    const statusHtml = `<span style="color:${c};font-weight:700;font-size:.75rem">${s.status}</span>`;
+    const tanggal = s.tanggal ? s.tanggal.replace('T',' ').slice(0,16) : '–';
+    const cod  = s.cod  > 0 ? fmt(s.cod,1)  : '<span class="text-muted">–</span>';
+    const bod  = s.bod  > 0 ? fmt(s.bod,1)  : '<span class="text-muted">–</span>';
+    const doV  = s.do   > 0 ? fmt(s.do,1)   : '<span class="text-muted">–</span>';
+    const ph   = s.ph   > 0 ? fmt(s.ph,1)   : '<span class="text-muted">–</span>';
+    const tss  = s.tss  > 0 ? fmt(s.tss,1)  : '<span class="text-muted">–</span>';
+    const param = s.param_kritis && s.param_kritis!=='–'
+      ? `<span class="param-badge">${s.param_kritis}</span>` : '<span class="text-muted">–</span>';
+
+    return `<tr class="kpi-station-row" onclick="focusStation('${s.station_id}',${s.latitude},${s.longitude})"
+      data-bs-dismiss="modal">
+      <td>
+        <div><b style="color:var(--blue)">${s.station_id}</b></div>
+        <div style="font-size:.7rem;color:var(--text-muted)">${s.station_name}</div>
+      </td>
+      <td>${statusHtml}</td>
+      <td class="text-center">${idx}</td>
+      <td>${param}</td>
+      <td class="text-end">${cod}</td>
+      <td class="text-end">${bod}</td>
+      <td class="text-end">${doV}</td>
+      <td class="text-end">${ph}</td>
+      <td class="text-end">${tss}</td>
+      <td>
+        <div style="font-size:.75rem">${s.kabkot}</div>
+        <div style="font-size:.68rem;color:var(--text-muted)">${s.das}</div>
+      </td>
+      <td style="font-size:.68rem;color:var(--text-muted);white-space:nowrap">${tanggal}</td>
+      <td>
+        <div class="d-flex gap-1">
+          <button class="btn btn-link btn-sm p-0" title="Tren historis"
+            onclick="event.stopPropagation();
+              bootstrap.Modal.getInstance(document.getElementById('kpi-modal')).hide();
+              setTimeout(()=>openTrendModal('${s.station_id}'),300)">
+            <i class="bi bi-graph-up" style="color:var(--blue)"></i>
+          </button>
+          <button class="btn btn-link btn-sm p-0" title="Analisis dengan agent"
+            onclick="event.stopPropagation();
+              bootstrap.Modal.getInstance(document.getElementById('kpi-modal')).hide();
+              setTimeout(()=>{if(_stationSelect)_stationSelect.setValue('${s.station_id}',true);
+              startAnalysis('station','${s.station_id}',false,false);},400)">
+            <i class="bi bi-robot" style="color:var(--navy)"></i>
+          </button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+
+  // Update sort icon highlight
+  document.querySelectorAll('#kpi-station-table thead th').forEach(th => {
+    th.classList.remove('sort-active');
+  });
+}
+
+function filterKpiTable(){
+  _renderKpiTable(_kpiData);
+}
+
+function sortKpiTable(col){
+  if(_kpiSort.col === col) _kpiSort.asc = !_kpiSort.asc;
+  else { _kpiSort.col = col; _kpiSort.asc = false; }
+  _renderKpiTable(_kpiData);
+}
+
+function focusStation(stationId, lat, lon){
+  if(lat && lon) {
+    map.setView([lat, lon], 14);
+    if(markers[stationId]) markers[stationId].openPopup();
+  }
+}
+
+// ── Cache ─────────────────────────────────────────────────────────────
+let _pendingCacheType = '', _pendingCacheTarget = '';
+
+async function checkAndShowCache(type, target) {
+  try {
+    const r = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({type, target, check_cache: true}),
+    });
+    const d = await r.json();
+    if (d.has_cache) {
+      _pendingCacheType   = type;
+      _pendingCacheTarget = target;
+      const sec = d.elapsed_sec || 0;
+      const m = Math.floor(sec/60), s = sec % 60;
+      const ago = _timeAgo(d.cached_at);
+      document.getElementById('cache-info-text').innerHTML =
+        `Tersedia hasil analisis <b>${ago}</b> (diproses dalam ${m}m ${s}s).`;
+      document.getElementById('cache-banner').classList.remove('d-none');
+      return true;
+    }
+    document.getElementById('cache-banner').classList.add('d-none');
+    return false;
+  } catch(e) {
+    return false;
+  }
+}
+
+function _timeAgo(isoStr) {
+  if (!isoStr) return '–';
+  const diff = Date.now() - new Date(isoStr).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return 'baru saja';
+  if (m < 60) return `${m} menit lalu`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} jam lalu`;
+  return `${Math.floor(h/24)} hari lalu`;
+}
+
+async function useCache() {
+  document.getElementById('cache-banner').classList.add('d-none');
+  // skipCacheCheck=true agar tidak cek cache lagi dan tidak loop
+  startAnalysis(_pendingCacheType, _pendingCacheTarget, false, true);
+}
+
+async function startAnalysisForce() {
+  document.getElementById('cache-banner').classList.add('d-none');
+  startAnalysis(_pendingCacheType || 'full_scan', _pendingCacheTarget, true, true);
+}
+
 // ── Analysis ──────────────────────────────────────────────────────────
-async function startAnalysis(type,target=''){
+async function startAnalysis(type, target='', forceRefresh=false, skipCacheCheck=false){
   if(type==='station'&&!target){alert('Pilih stasiun terlebih dahulu');return}
   if(type==='region'&&!target){alert('Isi nama wilayah terlebih dahulu');return}
+
+  // Cek cache (skip jika forceRefresh atau skipCacheCheck)
+  if(!forceRefresh && !skipCacheCheck) {
+    const hasCache = await checkAndShowCache(type, target);
+    if(hasCache) return;  // tampilkan banner, tunggu pilihan user
+  }
+
+  document.getElementById('cache-banner').classList.add('d-none');
 
   const btns=document.querySelectorAll('.analysis-controls button,.analysis-controls input');
   btns.forEach(b=>b.disabled=true);
@@ -1031,11 +1970,12 @@ async function startAnalysis(type,target=''){
   try{
     const res=await fetch('/api/analyze',{method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({type,target})});
+      body:JSON.stringify({type, target, force_refresh: forceRefresh})});
     const{job_id}=await res.json();
     _currentJobId=job_id;
     if(_pollTimer)clearInterval(_pollTimer);
-    _pollTimer=setInterval(()=>pollAnalysis(job_id,btns),3000);
+    // Polling lebih cepat (1s) agar cache terasa instan, fallback ke 3s
+    _pollTimer=setInterval(()=>pollAnalysis(job_id,btns), skipCacheCheck&&!forceRefresh ? 800 : 3000);
   }catch(e){
     document.getElementById('analysis-status').textContent='Error: '+e.message;
     btns.forEach(b=>b.disabled=false);
@@ -1054,8 +1994,10 @@ async function pollAnalysis(jobId,btns){
       if(_stationSelect) _stationSelect.enable();
       stopElapsed(); stopLogPolling();
       const s=Math.floor((Date.now()-_analysisStart)/1000);
-      document.getElementById('analysis-status').innerHTML=
-        `<i class="bi bi-check-circle text-success me-1"></i>Selesai dalam ${Math.floor(s/60)}m ${s%60}s`;
+      const fromCache = d.from_cache === true || d.result?._from_cache === true;
+      document.getElementById('analysis-status').innerHTML = fromCache
+        ? `<i class="bi bi-lightning-fill text-warning me-1"></i><span class="badge bg-warning text-dark me-1">Dari Cache</span>Dimuat instan`
+        : `<i class="bi bi-check-circle text-success me-1"></i>Selesai dalam ${Math.floor(s/60)}m ${s%60}s`;
       renderResult(d.result);
       loadSummary();loadOnlimo();loadBmkg();loadSparing();loadSitala();loadAnomalyLog();
     }else if(d.status==='error'){
@@ -1084,9 +2026,19 @@ function renderResult(result){
 
   if(!result){document.getElementById('result-placeholder').classList.remove('d-none');return}
   if(result.status==='no_data'){
-    document.getElementById('result-placeholder').innerHTML=
-      `<i class="bi bi-database-x" style="font-size:3rem;opacity:.25"></i>
-      <p>${result.message||'Tidak ada data'}</p>`;
+    const etlBtn = result.missing_etl
+      ? `<a href="/admin/etl" class="btn btn-warning btn-sm mt-2">
+           <i class="bi bi-cloud-download me-1"></i>Buka Admin ETL
+         </a>` : '';
+    const countInfo = result.all_stations_count != null
+      ? `<div class="mt-1" style="font-size:.72rem;color:var(--text-muted)">${result.all_stations_count} stasiun di master, belum ada data sensor.</div>` : '';
+    document.getElementById('result-placeholder').innerHTML=`
+      <i class="bi bi-database-x" style="font-size:2.5rem;opacity:.25"></i>
+      <div class="text-center mt-2">
+        <div style="font-size:.85rem;color:var(--text-muted)">${result.message||'Tidak ada data'}</div>
+        ${countInfo}
+        ${etlBtn}
+      </div>`;
     document.getElementById('result-placeholder').classList.remove('d-none');
     return;
   }
@@ -1211,21 +2163,92 @@ function toggleNarrative(){
     ?'<i class="bi bi-chevron-up"></i> Sembunyikan'
     :'<i class="bi bi-chevron-down"></i> Tampilkan';
 }
-function renderNarrative(text){
-  if(!text||!text.trim())return;
-  const esc=text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  const hi=esc
-    .replace(/^(COMPLETE ANALYSIS SUMMARY.*|ANALYSIS RESULTS SUMMARY.*|Station .+\(.+\).*|Cross-correlation.*|Causal Evidence.*|Urgency.*|Data Quality.*|Response to Feedback.*)$/gm,'<span class="nar-header">$1</span>')
+// ── Narrative Helpers ─────────────────────────────────────────────────
+function highlightNarrativeText(text){
+  const esc = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return esc
+    .replace(/\*\*(.+?)\*\*/g,'<b>$1</b>')
     .replace(/\b(TINDAK)\b/g,'<span class="nar-tindak">$1</span>')
     .replace(/\b(WASPADA)\b/g,'<span class="nar-waspada">$1</span>')
     .replace(/\b(PANTAU)\b/g,'<span class="nar-pantau">$1</span>')
-    .replace(/\b(YES|ANOMALY|CEMAR BERAT|CEMAR SEDANG|CEMAR RINGAN)\b/g,'<span class="nar-anomaly">$1</span>')
-    .replace(/^(- [A-Za-z \/]+)(:)/gm,'<span class="nar-key">$1</span>$2')
-    .replace(/\b(KLHK\d+)\b/g,'<span class="nar-station">$1</span>');
-  document.getElementById('narrative-content').innerHTML=hi;
-  document.getElementById('narrative-section').style.display='block';
+    .replace(/\b(CEMAR BERAT|ANOMALY|ANOMALOUS)\b/g,'<span class="nar-anomaly">$1</span>')
+    .replace(/\b(CEMAR SEDANG|CEMAR RINGAN)\b/g,'<span class="nar-waspada">$1</span>')
+    .replace(/\b(KLHK\d+)\b/g,'<span class="nar-station">$1</span>')
+    .replace(/^([\s\-\*]*[A-Z][A-Za-z\s\/\(\)]{4,})(:)/gm,'<span class="nar-key">$1</span>$2');
+}
+
+function _detectStepType(text){
+  const t = text.toLowerCase();
+  if(/tindak|cemar berat|critical|failed|failure|error|pelanggaran/.test(t)) return 'warn';
+  if(/conclusion|kesimpulan|final|result|output|summary|rekomendasi|recommend/.test(t)) return 'conclude';
+  if(/step \d|analyz|analisis|deteksi|detect|profil|pollution|rainfall|sparing|ika|korelasi/.test(t)) return 'analyze';
+  if(/plan|strategi|strategy|think|will|pertama|langkah|approach|need to/.test(t)) return 'plan';
+  return 'default';
+}
+
+function _stepTypeLabel(type){
+  return {
+    plan:     'Perencanaan',
+    analyze:  'Analisis',
+    conclude: 'Kesimpulan',
+    warn:     'Peringatan',
+    default:  'Reasoning',
+  }[type] || 'Reasoning';
+}
+
+function renderNarrative(text){
+  if(!text||!text.trim())return;
+
+  const sections = text.split(/\n\s*---\s*\n/).filter(s=>s.trim());
+
+  let html = '';
+  if(sections.length > 1){
+    sections.forEach((section, i) => {
+      const trimmed = section.trim();
+      if(!trimmed) return;
+
+      const lines = trimmed.split('\n');
+      // Judul: ambil baris pertama yang tidak kosong, bersihkan markdown
+      let titleRaw = lines[0].replace(/^\*\*|\*\*$/g,'').replace(/^#+\s*/,'').replace(/^-\s*/,'').trim();
+      if(!titleRaw && lines.length>1) titleRaw = lines[1].trim();
+      const title = titleRaw.length>90 ? titleRaw.slice(0,87)+'…' : titleRaw;
+      const body  = (lines.length>1 ? lines.slice(1).join('\n') : trimmed).trim();
+
+      const type  = _detectStepType(trimmed);
+      const label = _stepTypeLabel(type);
+      // Buka block pertama secara default
+      const isOpen = i === 0;
+
+      html += `
+      <div class="nar-think-block type-${type} ${isOpen?'':'collapsed'}" id="nar-block-${i}">
+        <div class="nar-think-header" onclick="toggleThinkBlock(${i})">
+          <span class="nar-step-num">${i+1}</span>
+          <span class="nar-step-label">${label}</span>
+          <span class="nar-think-title">${highlightNarrativeText(title)}</span>
+          <i class="bi bi-chevron-up nar-chevron"></i>
+        </div>
+        <div class="nar-think-body" style="display:${isOpen?'block':'none'}">
+          ${highlightNarrativeText(body||trimmed)}
+        </div>
+      </div>`;
+    });
+  } else {
+    html = `<div class="narrative-box">${highlightNarrativeText(text)}</div>`;
+  }
+
+  document.getElementById('narrative-content').innerHTML = html;
+  document.getElementById('narrative-section').style.display = 'block';
+
   if(text.includes('TINDAK')||text.includes('WASPADA'))
     if(!_narrativeVisible) toggleNarrative();
+}
+
+function toggleThinkBlock(i){
+  const block = document.getElementById('nar-block-'+i);
+  const body  = block.querySelector('.nar-think-body');
+  const isOpen = body.style.display !== 'none';
+  body.style.display = isOpen ? 'none' : 'block';
+  block.classList.toggle('collapsed', !isOpen);
 }
 
 // ── Detail Modal ──────────────────────────────────────────────────────

@@ -653,14 +653,14 @@ CREATE OR REPLACE VIEW v_onlimo_terbaru AS
     ) latest_p ON p.station_id = latest_p.station_id
              AND p.tanggal_ukur = latest_p.max_tgl
 
-    -- LEFT JOIN ke status tervalidasi terbaru (bisa null jika belum divalidasi)
+    -- LEFT JOIN ke status tervalidasi TERBARU per stasiun (correlated subquery)
+    -- Menggunakan correlated subquery agar hanya 1 baris per stasiun (tidak duplikat)
     LEFT JOIN onlimo_status st ON s.station_id = st.station_id
-    LEFT JOIN (
-        SELECT station_id, MAX(tanggal_validasi) AS max_tgl_validasi
-        FROM onlimo_status
-        GROUP BY station_id
-    ) latest_st ON st.station_id = latest_st.station_id
-              AND st.tanggal_validasi = latest_st.max_tgl_validasi
+        AND st.tanggal_validasi = (
+            SELECT MAX(tanggal_validasi)
+            FROM onlimo_status
+            WHERE station_id = s.station_id
+        )
 
     WHERE s.status_aktif = 1
       AND p.deleted = 0;

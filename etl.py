@@ -408,7 +408,12 @@ def sync_onlimo_monitoring(db: pymysql.Connection, session: requests.Session,
 # =============================================================================
 
 def sync_onlimo_status(db: pymysql.Connection, session: requests.Session,
-                       station_ids: list = None) -> int:
+                       station_ids: list = None, days_back: int = 3) -> int:
+    """
+    Sync status indeks mutu harian per stasiun per tanggal.
+    API hanya menerima satu tanggal per request, sehingga perlu loop
+    per tanggal × per stasiun untuk mendapatkan data historis.
+    """
     if not ONLIMO_STATUS_URL:
         logger.warning("ONLIMO_STATUS_URL not set — skipping status sync")
         return 0
@@ -432,11 +437,20 @@ def sync_onlimo_status(db: pymysql.Connection, session: requests.Session,
     if not station_ids:
         return 0
 
+    # Buat daftar tanggal: dari (hari ini - days_back) sampai hari ini
+    today = date.today()
+    date_list = [
+        (today - timedelta(days=i)).isoformat()
+        for i in range(days_back, -1, -1)   # urutan dari lama ke baru
+    ]
+
     endpoint = _base_url(ONLIMO_STATUS_URL)
-    log_id = _sync_start(db, "onlimo_status", endpoint)
-    headers = _onlimo_headers()
-    records = 0
-    today_str = date.today().isoformat()
+    log_id   = _sync_start(db, "onlimo_status", endpoint)
+    headers  = _onlimo_headers()
+    records  = 0
+
+    logger.info(f"onlimo_status: {len(station_ids)} stasiun × {len(date_list)} hari "
+                f"({date_list[0]} ~ {date_list[-1]})")
 
     sql = """
         INSERT INTO onlimo_status (
@@ -458,36 +472,48 @@ def sync_onlimo_status(db: pymysql.Connection, session: requests.Session,
 
     try:
         for station_id in station_ids:
-            resp = session.get(
-                endpoint, headers=headers,
-                params={"station_id": station_id, "date": today_str},
-                timeout=30,
-            )
-            resp.raise_for_status()
-            body = resp.json()
+            station_records = 0
+            for date_str in date_list:
+                try:
+                    resp = session.get(
+                        endpoint, headers=headers,
+                        params={"station_id": station_id, "date": date_str},
+                        timeout=30,
+                    )
+                    resp.raise_for_status()
+                    body = resp.json()
 
-            # API returns single object under "data"
-            data = body.get("data", {})
-            if not data or not data.get("tanggal_validasi"):
-                continue
+                    # API mengembalikan objek tunggal di bawah "data"
+                    data = body.get("data", {})
+                    if not data or not data.get("tanggal_validasi"):
+                        continue
 
-            with db.cursor() as cur:
-                cur.execute(sql, (
-                    station_id,
-                    data.get("tanggal_validasi"),
-                    data.get("tanggal_data"),
-                    _to_float(data.get("indeks")),
-                    _safe(data.get("status_nama")),
-                    _safe(data.get("status_warna")),
-                    _safe(data.get("kritis")),
-                    _safe(data.get("max_parameter")),
-                    _to_float(data.get("max_nilai")),
-                    _safe(data.get("keterangan")),
-                ))
-            db.commit()
-            records += 1
+                    with db.cursor() as cur:
+                        cur.execute(sql, (
+                            station_id,
+                            data.get("tanggal_validasi"),
+                            data.get("tanggal_data"),
+                            _to_float(data.get("indeks")),
+                            _safe(data.get("status_nama")),
+                            _safe(data.get("status_warna")),
+                            _safe(data.get("kritis")),
+                            _safe(data.get("max_parameter")),
+                            _to_float(data.get("max_nilai")),
+                            _safe(data.get("keterangan")),
+                        ))
+                    db.commit()
+                    records += 1
+                    station_records += 1
 
-        logger.info(f"onlimo_status: {records} upserted")
+                except Exception as date_err:
+                    # Skip tanggal yang gagal, lanjut ke tanggal berikutnya
+                    logger.debug(f"  {station_id} {date_str}: {date_err}")
+                    continue
+
+            if station_records > 0:
+                logger.info(f"  {station_id}: {station_records} records")
+
+        logger.info(f"onlimo_status: {records} total upserted")
         _sync_end(db, log_id, "success", records)
     except Exception as e:
         db.rollback()
@@ -1089,7 +1115,7 @@ def run_all(days_back: int = 3):
     try:
         sync_onlimo_stasiun(db, session)
         sync_onlimo_monitoring(db, session, days_back)
-        sync_onlimo_status(db, session)
+        sync_onlimo_status(db, session, days_back=days_back)
         sync_bmkg(db, session)
         sync_sparing_logger(db, session)
         sync_sparing_monitoring(db, session, days_back)
@@ -1117,7 +1143,7 @@ if __name__ == "__main__":
         if not any_flag or args.onlimo:
             sync_onlimo_stasiun(db, session)
             sync_onlimo_monitoring(db, session, args.days)
-            sync_onlimo_status(db, session)
+            sync_onlimo_status(db, session, days_back=days_back)
         if not any_flag or args.bmkg:
             sync_bmkg(db, session)
         if not any_flag or args.sparing:
