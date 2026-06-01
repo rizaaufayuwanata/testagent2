@@ -6,8 +6,13 @@
 # Agent 3: ReportEvaluatorAgent — validate analysis consistency, format for dashboard (or send feedback)
 # =============================================================================
 
+import sys
+sys.stdout.reconfigure(encoding='utf-8')
+sys.stderr.reconfigure(encoding='utf-8')
+
 import json
 import logging
+import time
 from typing import Optional
 from datetime import datetime
 
@@ -35,26 +40,65 @@ def _get_client(model: str) -> OpenAI:
     if model not in _clients:
         if not OPENROUTER_API_KEY:
             raise RuntimeError("OPENROUTER_API_KEY not set")
-        _clients[model] = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=OPENROUTER_API_KEY)
+        _clients[model] = OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=OPENROUTER_API_KEY,
+            timeout=120.0,
+        )
     return _clients[model]
+
+
+def _log(msg: str):
+    ts = datetime.now().strftime("%H:%M:%S")
+    line = f"[{ts}] {msg}"
+    print(line, flush=True)
+    logger.info(msg)
+
+
+# Kumpulkan semua teks dari assistant dalam satu loop — dibaca oleh DataAnalystAgent
+_loop_collected_texts: list[str] = []
+
+
+_ANALYSIS_KEYWORDS = [
+    "ANALYSIS RESULTS SUMMARY", "COMPLETE ANALYSIS SUMMARY",
+    "ANALYSIS SUMMARY", "Anomaly Status:", "Pollution Profile:",
+    "Urgency:", "Causal Evidence:", "IKA Gap:",
+]
 
 
 def _run_loop(model, system_prompt, user_content, tools_list, tool_funcs, max_steps=30, label="Agent"):
     """Generic agentic loop shared by DataEvaluator and DataAnalyst."""
+    global _loop_collected_texts
+    _loop_collected_texts = []          # reset setiap loop baru
+
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_content},
     ]
     step = 0
-    for _ in range(max_steps):
-        response = _get_client(model).chat.completions.create(
-            model=model, messages=messages, tools=tools_list, tool_choice="auto",
-        )
+    loop_start = time.time()
+
+    for iteration in range(max_steps):
+        _log(f"[{label}] LLM call #{iteration+1}/{max_steps} (total elapsed: {time.time()-loop_start:.1f}s)...")
+        try:
+            t0 = time.time()
+            response = _get_client(model).chat.completions.create(
+                model=model, messages=messages, tools=tools_list, tool_choice="auto",
+            )
+            _log(f"[{label}] LLM responded in {time.time()-t0:.1f}s")
+        except Exception as e:
+            _log(f"[{label}] LLM call FAILED: {e}")
+            raise
+
         msg = response.choices[0].message
+
+        # Kumpulkan semua teks dari assistant (termasuk yang disertai tool calls)
+        if msg.content and msg.content.strip():
+            _loop_collected_texts.append(msg.content.strip())
 
         if not msg.tool_calls:
             raw = (msg.content or "").strip()
-            print(f"  ✅ [{label}] Done — {step} tool calls")
+            _log(f"[{label}] Done — {step} tool calls, {time.time()-loop_start:.1f}s total")
             return raw
 
         messages.append({
@@ -71,22 +115,22 @@ def _run_loop(model, system_prompt, user_content, tools_list, tool_funcs, max_st
             name = tc.function.name
             args = json.loads(tc.function.arguments)
             summary = ", ".join(f"{k}={str(v)[:50]}" for k, v in args.items())
-            print(f"  [{step:02d}] → {name}({summary})")
+            _log(f"[{label}] Step {step:02d} → {name}({summary})")
 
             if name in tool_funcs:
                 try:
                     result = tool_funcs[name](args)
-                    preview = str(result)[:100].replace("\n", " ")
-                    print(f"       ↳ {preview}{'...' if len(str(result)) > 100 else ''}")
+                    preview = str(result)[:120].replace("\n", " ")
+                    print(f"           ↳ {preview}{'...' if len(str(result)) > 120 else ''}", flush=True)
                 except Exception as e:
                     result = json.dumps({"error": str(e)})
-                    print(f"       ↳ ERROR: {e}")
+                    _log(f"           ↳ ERROR: {e}")
             else:
                 result = json.dumps({"error": f"Unknown tool: {name}"})
 
             messages.append({"role": "tool", "tool_call_id": tc.id, "content": str(result)})
 
-    print(f"  ⚠️ [{label}] Hit MAX_STEPS={max_steps}")
+    _log(f"[{label}] Hit MAX_STEPS={max_steps} after {time.time()-loop_start:.1f}s")
     return json.dumps({"error": f"Exceeded {max_steps} steps", "partial": True})
 
 
@@ -232,10 +276,7 @@ OUTPUT FORMAT (JSON only, no markdown):
 
 class DataEvaluatorAgent:
     def run(self, raw_bundle: dict) -> dict:
-        print("\n🔍 [DataEvaluator] Starting data quality check...")
-        print(f"   Model    : {EVALUATOR_MODEL}")
-        print(f"   API      : OpenRouter (single key, model routed by string)")
-        print(f"   Stations : {len(raw_bundle.get('candidate_stations', []))}")
+        _log(f"[DataEvaluator] START — model={EVALUATOR_MODEL} stations={len(raw_bundle.get('candidate_stations', []))}")
         raw = _run_loop(
             EVALUATOR_MODEL, EVALUATOR_SYSTEM,
             "Raw data bundle:\n\n" + json.dumps(raw_bundle, ensure_ascii=False, default=str),
@@ -341,18 +382,13 @@ class DataAnalystAgent:
     def run(self, cleaned_data: dict, feedback: Optional[str] = None) -> dict:
         label = "DataAnalyst"
         if feedback:
-            print(f"\n🔄 [{label}] Re-analysing with feedback from ReportEvaluator...")
-            print(f"   Model    : {ANALYST_MODEL}")
-            print(f"   API      : OpenRouter (single key, model routed by string)")
+            _log(f"[DataAnalyst] RE-ANALYSE with feedback — model={ANALYST_MODEL}")
             content = (
                 "Cleaned data bundle:\n\n" + json.dumps(cleaned_data, ensure_ascii=False, default=str)
                 + "\n\n--- FEEDBACK FROM REPORT EVALUATOR ---\n" + feedback
             )
         else:
-            print(f"\n📊 [{label}] Starting analysis...")
-            print(f"   Model      : {ANALYST_MODEL}")
-            print(f"   API        : OpenRouter (single key, model routed by string)")
-            print(f"   Candidates : {len(cleaned_data.get('cleaned_candidate_stations', []))}")
+            _log(f"[DataAnalyst] START — model={ANALYST_MODEL} candidates={len(cleaned_data.get('cleaned_candidate_stations', []))}")
             content = "Cleaned data bundle:\n\n" + json.dumps(cleaned_data, ensure_ascii=False, default=str)
 
         raw = _run_loop(
@@ -360,7 +396,38 @@ class DataAnalystAgent:
             ANALYST_TOOLS, ANALYST_TOOL_FUNCS,
             max_steps=30, label=label,
         )
-        return _parse_json(raw, label)
+        result = _parse_json(raw, label)
+
+        # Cari teks narasi terbaik dari semua pesan yang dikumpulkan selama loop.
+        # Prioritaskan pesan yang mengandung kata kunci analisis, bukan pesan error/failure.
+        narrative = ""
+        PREFER = ["ANALYSIS RESULTS SUMMARY", "COMPLETE ANALYSIS SUMMARY",
+                  "ANALYSIS SUMMARY", "Station KLHK", "Anomaly Status:"]
+        AVOID  = ["Summary of Failures", "## Failure", "failed", "error occurred"]
+
+        # Cari dari belakang (pesan terbaru lebih relevan)
+        for text in reversed(_loop_collected_texts):
+            has_analysis = any(kw.lower() in text.lower() for kw in PREFER)
+            is_failure   = any(kw.lower() in text.lower() for kw in AVOID)
+            if has_analysis and not is_failure:
+                narrative = text
+                break
+
+        # Jika tidak ada yang cocok, cari pesan terpanjang yang bukan pure JSON dan bukan failure
+        if not narrative:
+            candidates = [
+                t for t in _loop_collected_texts
+                if len(t) > 200
+                and not t.strip().startswith('{')
+                and not any(kw.lower() in t.lower() for kw in AVOID)
+            ]
+            if candidates:
+                narrative = max(candidates, key=len)
+
+        # Fallback ke raw jika masih kosong
+        result["_raw_narrative"] = narrative or raw or ""
+        _log(f"[DataAnalyst] Narrative captured: {len(result['_raw_narrative'])} chars from {len(_loop_collected_texts)} messages")
+        return result
 
 
 # =============================================================================
@@ -445,9 +512,7 @@ RULES:
 
 class ReportEvaluatorAgent:
     def run(self, analysis_result: dict, data_quality: Optional[dict] = None) -> dict:
-        print(f"\n🧠 [ReportEvaluator] Validating analysis...")
-        print(f"   Model : {REPORTER_MODEL}")
-        print(f"   API   : OpenRouter (single key, model routed by string)")
+        _log(f"[ReportEvaluator] START — model={REPORTER_MODEL}")
 
         context = "AnalysisResult:\n\n" + json.dumps(analysis_result, ensure_ascii=False, indent=2, default=str)
         if data_quality:
@@ -466,9 +531,9 @@ class ReportEvaluatorAgent:
 
             action = result.get("action", "accept")
             if action == "feedback":
-                print(f"  🔄 [ReportEvaluator] Found {len(result.get('issues', []))} issues — sending feedback")
+                _log(f"[ReportEvaluator] FEEDBACK — {len(result.get('issues', []))} issues found")
             else:
-                print(f"  ✅ [ReportEvaluator] Analysis accepted — formatting for dashboard")
+                _log(f"[ReportEvaluator] ACCEPTED — analysis passed validation")
             return result
 
         except Exception as e:

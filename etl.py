@@ -262,20 +262,42 @@ def sync_onlimo_stasiun(db: pymysql.Connection, session: requests.Session) -> in
 # =============================================================================
 
 def sync_onlimo_monitoring(db: pymysql.Connection, session: requests.Session,
-                           days_back: int = 3) -> int:
+                           days_back: int = 3,
+                           station_ids: list = None) -> int:
+    """
+    Sync Onlimo monitoring data.
+    station_ids: optional list of station IDs to sync. If None, syncs all KLHK-format stations.
+    """
     if not ONLIMO_MONITORING_URL:
         logger.warning("ONLIMO_MONITORING_URL not set — skipping monitoring sync")
         return 0
 
-    # Ambil daftar station_id dari DB
-    with db.cursor() as cur:
-        cur.execute("SELECT station_id FROM onlimo_stasiun WHERE status_aktif = 1")
-        station_ids = [r["station_id"] for r in cur.fetchall()]
+    if station_ids is not None:
+        # Gunakan station_ids yang diberikan langsung
+        ids_to_sync = [s for s in station_ids if s and str(s).strip()]
+    else:
+        # Default: hanya stasiun KLHK-format (menghindari 400 Bad Request)
+        with db.cursor() as cur:
+            cur.execute("""
+                SELECT station_id FROM onlimo_stasiun
+                WHERE status_aktif = 1
+                  AND station_id REGEXP '^KLHK[0-9]+'
+                ORDER BY station_id
+            """)
+            ids_to_sync = [r["station_id"] for r in cur.fetchall()]
 
-    if not station_ids:
-        logger.warning("No active stations in DB — run sync_onlimo_stasiun first")
+        if not ids_to_sync:
+            # Fallback: semua stasiun aktif
+            with db.cursor() as cur:
+                cur.execute("SELECT station_id FROM onlimo_stasiun WHERE status_aktif = 1 ORDER BY station_id")
+                ids_to_sync = [r["station_id"] for r in cur.fetchall()]
+
+    if not ids_to_sync:
+        logger.warning("No stations to sync — run sync_onlimo_stasiun first")
         return 0
 
+    station_ids = ids_to_sync
+    logger.info(f"onlimo_monitoring: akan sync {len(station_ids)} stasiun")
     total_records = 0
     headers = _onlimo_headers()
 
@@ -385,14 +407,27 @@ def sync_onlimo_monitoring(db: pymysql.Connection, session: requests.Session,
 # 3. ONLIMO — STATUS (indeks mutu harian tervalidasi)
 # =============================================================================
 
-def sync_onlimo_status(db: pymysql.Connection, session: requests.Session) -> int:
+def sync_onlimo_status(db: pymysql.Connection, session: requests.Session,
+                       station_ids: list = None) -> int:
     if not ONLIMO_STATUS_URL:
         logger.warning("ONLIMO_STATUS_URL not set — skipping status sync")
         return 0
 
-    with db.cursor() as cur:
-        cur.execute("SELECT station_id FROM onlimo_stasiun WHERE status_aktif = 1")
-        station_ids = [r["station_id"] for r in cur.fetchall()]
+    if station_ids is not None:
+        station_ids = [s for s in station_ids if s and str(s).strip()]
+    else:
+        with db.cursor() as cur:
+            cur.execute("""
+                SELECT station_id FROM onlimo_stasiun
+                WHERE status_aktif = 1
+                  AND station_id REGEXP '^KLHK[0-9]+'
+                ORDER BY station_id
+            """)
+            station_ids = [r["station_id"] for r in cur.fetchall()]
+        if not station_ids:
+            with db.cursor() as cur:
+                cur.execute("SELECT station_id FROM onlimo_stasiun WHERE status_aktif = 1 ORDER BY station_id")
+                station_ids = [r["station_id"] for r in cur.fetchall()]
 
     if not station_ids:
         return 0

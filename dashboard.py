@@ -1,11 +1,16 @@
-# =============================================================================
+﻿# =============================================================================
 # dashboard.py — WQSA Web Dashboard (Flask)
 # =============================================================================
 # Data from MySQL via data_layer.py. Agent via chain.py (3-agent pipeline).
 # Defined inputs only (no free-text prompts).
 # =============================================================================
 
+import sys
+sys.stdout.reconfigure(encoding='utf-8')
+sys.stderr.reconfigure(encoding='utf-8')
+
 import logging
+import os
 import threading
 import uuid
 from datetime import datetime
@@ -15,6 +20,12 @@ from flask import Flask, jsonify, render_template, request
 
 from config import TARGET_DAS, TARGET_REGION, TELEGRAM_BOT_TOKEN
 from chain import run_chain
+from etl import (
+    get_db, make_session,
+    sync_onlimo_stasiun, sync_onlimo_monitoring, sync_onlimo_status,
+    sync_bmkg, sync_sparing_logger, sync_sparing_monitoring, sync_sitala,
+    run_all,
+)
 from data_layer import (
     get_all_onlimo_flat,
     get_all_rainfall_data,
@@ -26,21 +37,44 @@ from data_layer import (
     get_dashboard_summary,
 )
 
-app = Flask(__name__, template_folder="templates")
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+_TEMPLATE_DIR = os.path.join(_BASE_DIR, "templates")
+app = Flask(__name__, template_folder=_TEMPLATE_DIR)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
 # ── Job store (in-memory, keyed by job_id) ────────────────────────────────
 _jobs = {}
 
+# ── ETL Job store ─────────────────────────────────────────────────────────
+_etl_jobs = {}
+
 
 # =============================================================================
 # PAGE ROUTE
 # =============================================================================
 
+@app.route("/test")
+def test_raw():
+    """Serve dashboard.html directly bypassing Jinja2 cache."""
+    from flask import send_file
+    tpl_path = os.path.join(_TEMPLATE_DIR, "dashboard.html")
+    return send_file(tpl_path, mimetype="text/html")
+
+
 @app.route("/")
 def index():
-    return render_template("dashboard.html")
+    tpl_path = os.path.join(_TEMPLATE_DIR, "dashboard.html")
+    print(f"[TEMPLATE] Serving from: {tpl_path}", flush=True)
+    print(f"[TEMPLATE] File exists: {os.path.exists(tpl_path)}", flush=True)
+    print(f"[TEMPLATE] File size: {os.path.getsize(tpl_path) if os.path.exists(tpl_path) else 'N/A'}", flush=True)
+    resp = render_template("dashboard.html")
+    from flask import make_response
+    r = make_response(resp)
+    r.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    r.headers["Pragma"] = "no-cache"
+    r.headers["Expires"] = "0"
+    return r
 
 
 # =============================================================================
@@ -292,6 +326,27 @@ def api_send_telegram(job_id: str):
 
 
 # =============================================================================
+# API — LIVE LOG STREAMING
+# =============================================================================
+
+@app.route("/api/log")
+def api_log():
+    """Return new lines from chain.log starting from a given line offset."""
+    try:
+        offset = int(request.args.get("offset", 0))
+        log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "chain.log")
+        if not os.path.exists(log_path):
+            return jsonify({"lines": [], "total": 0})
+        with open(log_path, "r", encoding="utf-8") as f:
+            all_lines = f.readlines()
+        total = len(all_lines)
+        new_lines = [l.rstrip() for l in all_lines[offset:]]
+        return jsonify({"lines": new_lines, "total": total})
+    except Exception as e:
+        return jsonify({"error": str(e), "lines": [], "total": 0})
+
+
+# =============================================================================
 # API — STATION LIST (for dropdown)
 # =============================================================================
 
@@ -309,12 +364,199 @@ def api_stations():
 
 
 # =============================================================================
+# ADMIN — ETL PAGE & ROUTES
+# =============================================================================
+
+@app.route("/admin/etl")
+def admin_etl():
+    return render_template("etl.html")
+
+
+def _run_etl_job(job_id: str, source: str, days_back: int, station_ids: list = None):
+    """Background worker for ETL jobs."""
+    _etl_jobs[job_id]["status"] = "running"
+    _etl_jobs[job_id]["started_at"] = datetime.now().isoformat()
+    results = {}
+    try:
+        db = get_db()
+        session = make_session()
+        try:
+            if source in ("all", "onlimo_stasiun"):
+                results["onlimo_stasiun"] = sync_onlimo_stasiun(db, session)
+            if source in ("all", "onlimo_monitoring"):
+                results["onlimo_monitoring"] = sync_onlimo_monitoring(db, session, days_back, station_ids)
+            if source in ("all", "onlimo_status"):
+                results["onlimo_status"] = sync_onlimo_status(db, session, station_ids)
+            if source == "onlimo":
+                results["onlimo_stasiun"]    = sync_onlimo_stasiun(db, session)
+                results["onlimo_monitoring"]  = sync_onlimo_monitoring(db, session, days_back, station_ids)
+                results["onlimo_status"]      = sync_onlimo_status(db, session, station_ids)
+            if source in ("all", "bmkg"):
+                results["bmkg"] = sync_bmkg(db, session)
+            if source in ("all", "sparing"):
+                results["sparing_logger"]     = sync_sparing_logger(db, session)
+                results["sparing_monitoring"] = sync_sparing_monitoring(db, session, days_back)
+            if source == "sparing_logger":
+                results["sparing_logger"] = sync_sparing_logger(db, session)
+            if source == "sparing_monitoring":
+                results["sparing_monitoring"] = sync_sparing_monitoring(db, session, days_back)
+            if source in ("all", "sitala"):
+                results["sitala"] = sync_sitala(db, session)
+        finally:
+            db.close()
+            session.close()
+
+        total = sum(v for v in results.values() if isinstance(v, int))
+        _etl_jobs[job_id]["status"]   = "done"
+        _etl_jobs[job_id]["results"]  = results
+        _etl_jobs[job_id]["total"]    = total
+    except Exception as e:
+        logger.exception(f"ETL job {job_id} failed")
+        _etl_jobs[job_id]["status"] = "error"
+        _etl_jobs[job_id]["error"]  = str(e)
+    _etl_jobs[job_id]["finished_at"] = datetime.now().isoformat()
+
+
+@app.route("/admin/etl/run", methods=["POST"])
+def admin_etl_run():
+    data        = request.get_json(force=True, silent=True) or {}
+    source      = data.get("source", "all")
+    days_back   = int(data.get("days_back", 3))
+    station_ids = data.get("station_ids", None)   # list or None
+
+    valid = {"all","onlimo","onlimo_stasiun","onlimo_monitoring","onlimo_status",
+             "bmkg","sparing","sparing_logger","sparing_monitoring","sitala"}
+    if source not in valid:
+        return jsonify({"error": f"Invalid source: {source}"}), 400
+
+    job_id = f"etl-{uuid.uuid4().hex[:10]}"
+    _etl_jobs[job_id] = {
+        "status": "queued", "source": source, "days_back": days_back,
+        "station_ids": station_ids,
+        "created_at": datetime.now().isoformat(),
+        "results": None, "error": None, "total": 0,
+    }
+    t = threading.Thread(target=_run_etl_job, args=(job_id, source, days_back, station_ids), daemon=True)
+    t.start()
+    logger.info(f"ETL job {job_id}: source={source} days_back={days_back}")
+    return jsonify({"job_id": job_id, "status": "queued"}), 202
+
+
+@app.route("/admin/etl/status/<job_id>")
+def admin_etl_status(job_id: str):
+    job = _etl_jobs.get(job_id)
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+    return jsonify({"job_id": job_id, **job})
+
+
+@app.route("/admin/etl/onlimo-stations")
+def admin_etl_onlimo_stations():
+    """List semua stasiun Onlimo dari DB beserta format ID-nya."""
+    try:
+        from data_layer import _query
+        rows = _query("""
+            SELECT station_id, station_name, nama_das, kabkot, status_aktif,
+                   (station_id REGEXP '^KLHK[0-9]+') AS is_klhk_format
+            FROM onlimo_stasiun
+            ORDER BY is_klhk_format DESC, station_id
+        """)
+        return jsonify([{
+            "station_id":    r["station_id"],
+            "station_name":  r.get("station_name") or "",
+            "das":           r.get("nama_das") or "",
+            "kabkot":        r.get("kabkot") or "",
+            "aktif":         bool(r.get("status_aktif")),
+            "is_klhk":       bool(r.get("is_klhk_format")),
+        } for r in rows])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/admin/etl/config-check")
+def admin_etl_config_check():
+    """Check which API configs are set in wqsa.env."""
+    from config import (
+        ONLIMO_STASIUN_URL, ONLIMO_MONITORING_URL, ONLIMO_STATUS_URL,
+        ONLIMO_API_KEY, ONLIMO_SECRET, ONLIMO_CLIENT_KEY,
+        SPARING_LOGGER_URL, SPARING_MONITORING_URL, SPARING_API_KEY,
+        SITALA_URL, SITALA_API_KEY,
+        BMKG_API_URL, BMKG_ADM4_CODES,
+    )
+    def chk(val): return bool(val and str(val).strip())
+    return jsonify({
+        "onlimo": {
+            "stasiun_url":    {"set": chk(ONLIMO_STASIUN_URL),    "value": (ONLIMO_STASIUN_URL or "")[:60]},
+            "monitoring_url": {"set": chk(ONLIMO_MONITORING_URL), "value": (ONLIMO_MONITORING_URL or "")[:60]},
+            "status_url":     {"set": chk(ONLIMO_STATUS_URL),     "value": (ONLIMO_STATUS_URL or "")[:60]},
+            "api_key":        {"set": chk(ONLIMO_API_KEY),        "value": ("***" if ONLIMO_API_KEY else "")},
+            "secret":         {"set": chk(ONLIMO_SECRET),         "value": ("***" if ONLIMO_SECRET else "")},
+            "client_key":     {"set": chk(ONLIMO_CLIENT_KEY),     "value": ("***" if ONLIMO_CLIENT_KEY else "")},
+        },
+        "bmkg": {
+            "api_url":   {"set": chk(BMKG_API_URL),    "value": (BMKG_API_URL or "")[:60]},
+            "adm4_codes":{"set": chk(BMKG_ADM4_CODES), "value": f"{len(BMKG_ADM4_CODES)} kode" if BMKG_ADM4_CODES else ""},
+        },
+        "sparing": {
+            "logger_url":     {"set": chk(SPARING_LOGGER_URL),     "value": (SPARING_LOGGER_URL or "")[:60]},
+            "monitoring_url": {"set": chk(SPARING_MONITORING_URL), "value": (SPARING_MONITORING_URL or "")[:60]},
+            "api_key":        {"set": chk(SPARING_API_KEY),        "value": ("***" if SPARING_API_KEY else "")},
+        },
+        "sitala": {
+            "url":     {"set": chk(SITALA_URL),     "value": (SITALA_URL or "")[:60]},
+            "api_key": {"set": chk(SITALA_API_KEY), "value": ("***" if SITALA_API_KEY else "")},
+        },
+    })
+
+
+@app.route("/admin/etl/history")
+def admin_etl_history():
+    """Last 50 ETL sync logs from api_sync_log table."""
+    try:
+        from data_layer import _query
+        rows = _query("""
+            SELECT id, api_name, endpoint, sync_start, sync_end,
+                   status, records_synced, error_message
+            FROM api_sync_log
+            ORDER BY sync_start DESC
+            LIMIT 50
+        """)
+        return jsonify([{
+            "id":             r["id"],
+            "api_name":       r["api_name"],
+            "endpoint":       (r.get("endpoint") or "")[:60],
+            "sync_start":     str(r.get("sync_start") or ""),
+            "sync_end":       str(r.get("sync_end") or ""),
+            "status":         r.get("status"),
+            "records_synced": r.get("records_synced") or 0,
+            "error_message":  (r.get("error_message") or "")[:200],
+        } for r in rows])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# =============================================================================
 # ENTRY POINT
 # =============================================================================
 
 if __name__ == "__main__":
-    print("=" * 60)
-    print(f"  WQSA Dashboard — {TARGET_DAS} / {TARGET_REGION}")
-    print(f"  Open: http://127.0.0.1:5000")
-    print("=" * 60)
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    import os
+    os.environ["PYTHONUNBUFFERED"] = "1"
+
+    # Log ke file agar bisa dipantau dari terminal manapun
+    import logging as _logging
+    file_handler = _logging.FileHandler("chain.log", encoding="utf-8")
+    file_handler.setLevel(_logging.INFO)
+    file_handler.setFormatter(_logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    _logging.getLogger().addHandler(file_handler)
+
+    print("=" * 60, flush=True)
+    print(f"  WQSA Dashboard — {TARGET_DAS} / {TARGET_REGION}", flush=True)
+    print(f"  Open: http://127.0.0.1:5000", flush=True)
+    print(f"  Log : chain.log (tail -f chain.log untuk monitor)", flush=True)
+    print("=" * 60, flush=True)
+
+    # use_reloader=False wajib agar background thread & print terlihat
+    app.run(debug=False, host="0.0.0.0", port=5000, use_reloader=False)
+
+

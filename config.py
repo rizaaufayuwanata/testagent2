@@ -5,7 +5,7 @@
 import os
 from dotenv import load_dotenv
 
-load_dotenv("wqsa.env")
+load_dotenv("wqsa.env", override=True)
 
 # ── API Keys ──────────────────────────────────────────────────────────────────
 OPENROUTER_API_KEY   = os.getenv("OPENROUTER_API_KEY")

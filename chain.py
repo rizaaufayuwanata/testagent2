@@ -8,11 +8,23 @@
 #           Max 2 feedback loops, then force accept
 # =============================================================================
 
+import sys
+sys.stdout.reconfigure(encoding='utf-8')
+sys.stderr.reconfigure(encoding='utf-8')
+
 import json
 import re
 import logging
+import time
 from datetime import datetime
 from typing import Optional
+
+
+def _log(msg: str):
+    ts = datetime.now().strftime("%H:%M:%S")
+    line = f"[{ts}] {msg}"
+    print(line, flush=True)
+    logger.info(msg)
 
 from config import (
     TARGET_DAS, TARGET_REGION,
@@ -53,7 +65,7 @@ def parse_target(analysis_type: str, target_value: str = "") -> dict:
 # =============================================================================
 
 def fetch_raw_data(target: dict) -> dict:
-    print(f"\n📡 [Phase 1] Fetching raw data — target: {target}")
+    _log(f"[Phase 1] Fetching raw data — target: {target}")
 
     # Fetch stations
     if target["type"] == "station":
@@ -71,7 +83,7 @@ def fetch_raw_data(target: dict) -> dict:
         stations = get_onlimo_data(das=TARGET_DAS)
 
     valid = [s for s in stations if "error" not in s and "info" not in s]
-    print(f"  Stations fetched: {len(valid)}")
+    _log(f"[Phase 1] Stations fetched: {len(valid)}")
 
     # Pre-filter candidates
     candidates = [
@@ -80,7 +92,7 @@ def fetch_raw_data(target: dict) -> dict:
         or "CEMAR" in (s.get("status") or "").upper()
     ] or valid[:10]
 
-    print(f"  Candidates for analysis: {len(candidates)}")
+    _log(f"[Phase 1] Candidates for analysis: {len(candidates)}")
 
     # Fetch rainfall per candidate
     rainfall = {}
@@ -117,7 +129,7 @@ def fetch_raw_data(target: dict) -> dict:
     # Fetch SITALA
     sitala = [s for s in get_sitala_data(district=TARGET_REGION) if "error" not in s and "info" not in s]
 
-    print(f"  ✅ Phase 1 complete\n")
+    _log(f"[Phase 1] Complete — {len(candidates)} candidates, {len(sitala)} sitala records")
     return {
         "target": target,
         "fetch_timestamp": datetime.now().isoformat(),
@@ -173,9 +185,8 @@ def run_chain(analysis_type: str = "full_scan", target_value: str = "",
     ts = datetime.now()
     session_id = session_id or f"dash-{int(ts.timestamp())}"
 
-    print(f"\n{'━'*50}")
-    print(f"🔗 WQSA CHAIN — {analysis_type}: {target_value or 'all'}")
-    print(f"{'━'*50}")
+    _log(f"CHAIN START — {analysis_type}: {target_value or 'all'} | session={session_id}")
+    chain_start = time.time()
 
     # ── Phase 1: Fetch ─────────────────────────────────────────────────────
     target = parse_target(analysis_type, target_value)
@@ -190,18 +201,20 @@ def run_chain(analysis_type: str = "full_scan", target_value: str = "",
         }
 
     # ── Phase 2: DataEvaluator ─────────────────────────────────────────────
-    print(f"🤖 [Phase 2] DataEvaluator")
+    _log(f"[Phase 2] Starting DataEvaluator...")
     evaluator = DataEvaluatorAgent()
     cleaned = evaluator.run(raw_bundle)
     data_quality = cleaned.get("data_quality", {})
+    _log(f"[Phase 2] Done in {time.time()-chain_start:.1f}s")
 
     # ── Phase 3: DataAnalyst ───────────────────────────────────────────────
-    print(f"\n🤖 [Phase 3] DataAnalyst")
+    _log(f"[Phase 3] Starting DataAnalyst...")
     analyst = DataAnalystAgent()
     analysis = analyst.run(cleaned)
+    _log(f"[Phase 3] Done in {time.time()-chain_start:.1f}s total")
 
     # ── Phase 4: ReportEvaluator (with feedback loop) ──────────────────────
-    print(f"\n🤖 [Phase 4] ReportEvaluator")
+    _log(f"[Phase 4] Starting ReportEvaluator...")
     reporter = ReportEvaluatorAgent()
     report = reporter.run(analysis, data_quality)
 
@@ -212,27 +225,86 @@ def run_chain(analysis_type: str = "full_scan", target_value: str = "",
             "issues": report.get("issues", []),
             "questions": report.get("questions", []),
         }, ensure_ascii=False)
-        print(f"\n🔄 Feedback loop {loops}/{MAX_FEEDBACK_LOOPS}")
+        _log(f"[Phase 4] Feedback loop {loops}/{MAX_FEEDBACK_LOOPS}")
 
-        # DataAnalyst revises
         analysis = analyst.run(cleaned, feedback=feedback_text)
-        # ReportEvaluator re-validates
         report = reporter.run(analysis, data_quality)
 
     if report.get("action") == "feedback":
-        print(f"  ⚠️ Max feedback loops reached — forcing accept")
+        _log(f"[Phase 4] Max feedback loops reached — forcing accept")
         report["action"] = "accept"
         report["unresolved_issues"] = report.get("issues", [])
 
     # ── Log to DB ──────────────────────────────────────────────────────────
-    print(f"\n💾 Logging results...")
+    _log(f"[Phase 5] Logging results to DB...")
     _log_results(analysis, report, session_id)
 
     # ── Build final output ─────────────────────────────────────────────────
     anomalous = analysis.get("anomalous_stations", [])
     normal_ct = analysis.get("normal_station_count", 0)
-    print(f"\n✅ Chain complete — {len(anomalous)} anomalous, {normal_ct} normal")
-    print(f"{'━'*50}\n")
+    _log(f"CHAIN COMPLETE — {len(anomalous)} anomalous, {normal_ct} normal | total={time.time()-chain_start:.1f}s")
+
+    # ── Reliability Assessment ─────────────────────────────────────────────
+    # Deteksi false positive: hasil PANTAU tapi data tidak bisa dipercaya
+    dq_score    = data_quality.get("overall_score", 100) if data_quality else 100
+    excluded    = data_quality.get("excluded_stations", []) if data_quality else []
+    high_null   = data_quality.get("high_null_fields", {}) if data_quality else {}
+    outliers    = data_quality.get("outliers", []) if data_quality else []
+
+    # Sensor/telemetry failure: parameter utama mayoritas 0 atau null
+    SENSOR_PARAMS = {"cod", "bod", "tss", "do", "ph", "amonia", "nitrat", "turbidity"}
+    sensor_nulls = [k for k in high_null if any(p in k.lower() for p in SENSOR_PARAMS)]
+    is_sensor_failure = len(sensor_nulls) >= 3
+
+    # Kandidat stations dari raw_bundle yang punya data 0 semua
+    dead_stations = []
+    for s in raw_bundle.get("candidate_stations", []):
+        params = s.get("parameter", {})
+        non_zero = [v for v in params.values() if isinstance(v, (int, float)) and v > 0]
+        if len(non_zero) == 0:
+            dead_stations.append(s.get("station_id", ""))
+    dead_stations = [s for s in dead_stations if s]
+
+    is_reliable = (
+        dq_score >= 60
+        and not is_sensor_failure
+        and len(excluded) == 0
+        and len(dead_stations) == 0
+    )
+
+    if is_sensor_failure:
+        reliability_level = "SENSOR_FAILURE"
+        reliability_msg   = (
+            f"SENSOR/TELEMETRY CLUSTER FAILURE — {len(sensor_nulls)} parameter utama "
+            f"tidak memiliki data valid ({', '.join(sensor_nulls[:4])}). "
+            "Hasil PANTAU ini adalah FALSE POSITIVE — bukan berarti kondisi baik."
+        )
+    elif len(dead_stations) > 0:
+        reliability_level = "NO_DATA"
+        reliability_msg   = (
+            f"Stasiun {', '.join(dead_stations[:3])} tidak mengirim data sensor "
+            "(semua nilai 0). Tidak dapat menilai kondisi sebenarnya."
+        )
+    elif dq_score < 60:
+        reliability_level = "LOW_QUALITY"
+        reliability_msg   = (
+            f"Kualitas data rendah (score: {dq_score}/100). "
+            "Hasil analisis mungkin tidak mencerminkan kondisi sebenarnya."
+        )
+    else:
+        reliability_level = "OK"
+        reliability_msg   = None
+
+    data_reliability = {
+        "is_reliable":       is_reliable,
+        "level":             reliability_level,
+        "score":             dq_score,
+        "warning":           reliability_msg,
+        "sensor_null_params": sensor_nulls,
+        "dead_stations":     dead_stations,
+        "excluded_stations": excluded,
+    }
+    _log(f"[Reliability] level={reliability_level} score={dq_score} dead={dead_stations} sensor_null={sensor_nulls}")
 
     return {
         "status":             "done",
@@ -240,7 +312,9 @@ def run_chain(analysis_type: str = "full_scan", target_value: str = "",
         "timestamp":          ts.isoformat(),
         "feedback_loops":     loops,
         "data_quality":       data_quality,
+        "data_reliability":   data_reliability,
         "analysis_raw":       analysis,
+        "analyst_narrative":  analysis.get("_raw_narrative", ""),
         "analysis_highlight": report.get("analysis_highlight"),
         "detail_reasoning":   report.get("detail_reasoning"),
         "kpi_update":         report.get("kpi_update"),

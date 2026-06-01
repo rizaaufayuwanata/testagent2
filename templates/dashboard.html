@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WQSA — Water Quality Dashboard</title>
+<title>WQSA v2 — Water Quality Dashboard</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
@@ -33,14 +33,64 @@
   .step-badge { display:inline-block; width:24px; height:24px; border-radius:50%; background:#0a3d62; color:#fff; text-align:center; line-height:24px; font-size:.75rem; font-weight:700; margin-right:.4rem; }
   .analysis-controls .btn { min-width:140px; }
   footer { font-size:.78rem; color:#6c757d; }
+
+  /* Live Log Terminal */
+  #log-panel {
+    background:#0d1117; color:#58a6ff; font-family:'Courier New',monospace;
+    font-size:.78rem; border-radius:8px; padding:10px 12px;
+    height:280px; overflow-y:auto; border:1px solid #30363d;
+  }
+  #log-panel .log-line { line-height:1.5; white-space:pre-wrap; word-break:break-all; }
+  #log-panel .log-line.phase { color:#3fb950; font-weight:700; }
+  #log-panel .log-line.llm  { color:#d2a8ff; }
+  #log-panel .log-line.step { color:#e3b341; }
+  #log-panel .log-line.done { color:#3fb950; font-weight:700; }
+  #log-panel .log-line.err  { color:#f85149; }
+  #log-panel .log-cursor { display:inline-block; width:8px; height:14px; background:#58a6ff; animation:blink 1s step-end infinite; vertical-align:middle; }
+  @keyframes blink { 50%{ opacity:0 } }
+
+  /* Hasil Analisis Panel */
+  #result-panel { min-height:340px; }
+  .result-station-card { border-left:4px solid #6c757d; background:#fff; border-radius:6px; padding:10px 12px; margin-bottom:8px; }
+  .result-station-card.TINDAK { border-left-color:var(--wqsa-red); }
+  .result-station-card.WASPADA { border-left-color:var(--wqsa-yellow); }
+  .result-station-card.PANTAU { border-left-color:var(--wqsa-green); }
+  .action-item { background:#f8f9fa; border-radius:4px; padding:6px 10px; margin-bottom:4px; font-size:.82rem; }
+  .badge-tindak { background:var(--wqsa-red)!important; }
+  .badge-waspada { background:var(--wqsa-yellow)!important; color:#000!important; }
+  .badge-pantau { background:var(--wqsa-green)!important; }
+  /* Narasi */
+  .narrative-box { background:#f8f9fa; border:1px solid #dee2e6; border-radius:6px;
+    padding:12px 14px; font-size:.82rem; line-height:1.7; white-space:pre-wrap;
+    word-break:break-word; max-height:340px; overflow-y:auto; font-family:'Segoe UI',sans-serif; }
+  .narrative-box .nar-station   { color:#0a3d62; font-weight:700; font-size:.88rem; }
+  .narrative-box .nar-anomaly   { color:#dc3545; font-weight:600; }
+  .narrative-box .nar-pantau    { color:#198754; font-weight:600; }
+  .narrative-box .nar-waspada   { color:#e67e22; font-weight:600; }
+  .narrative-box .nar-tindak    { color:#dc3545; font-weight:700; }
+  .narrative-box .nar-header    { color:#0a3d62; font-weight:700; border-bottom:1px solid #dee2e6;
+    margin-bottom:6px; padding-bottom:4px; display:block; }
+  .narrative-box .nar-key       { color:#6f42c1; font-weight:600; }
+  .narrative-box .nar-value     { color:#495057; }
+  /* Reliability */
+  .reliability-banner { border-radius:6px; padding:10px 14px; font-size:.83rem; margin-bottom:12px; }
+  .reliability-SENSOR_FAILURE { background:#fff3cd; border:1px solid #ffc107; color:#664d03; }
+  .reliability-NO_DATA        { background:#f8d7da; border:1px solid #dc3545; color:#58151c; }
+  .reliability-LOW_QUALITY    { background:#fff3cd; border:1px solid #ffc107; color:#664d03; }
+  .urgency-card-unreliable    { background:#f8f9fa!important; border:2px dashed #adb5bd!important; color:#6c757d!important; }
 </style>
 </head>
 <body>
 
 <nav class="navbar navbar-dark py-2 mb-3" id="navbar">
   <div class="container-fluid">
-    <span class="navbar-brand"><i class="bi bi-water me-2"></i>WQSA — Water Quality Dashboard</span>
-    <span class="text-white-50 small" id="last-refresh">Memuat…</span>
+    <span class="navbar-brand"><i class="bi bi-water me-2"></i>WQSA v2 — Water Quality Dashboard</span>
+    <div class="d-flex align-items-center gap-3">
+      <span class="text-white-50 small" id="last-refresh">Memuat…</span>
+      <a href="/admin/etl" class="btn btn-outline-light btn-sm">
+        <i class="bi bi-cloud-download me-1"></i>Admin ETL
+      </a>
+    </div>
   </div>
 </nav>
 
@@ -56,67 +106,127 @@
     <div class="col-6 col-md-3 col-xl-2"><div class="card kpi-card h-100 text-center py-3" style="background:#e8f4fd"><div class="kpi-icon text-danger"><i class="bi bi-factory"></i></div><div class="fw-bold fs-3" id="kpi-langgar">–</div><div class="small text-muted">Pelanggaran SPARING</div></div></div>
   </div>
 
-  <!-- ═══ ANALYSIS CONTROLS + HIGHLIGHT ═══ -->
+  <!-- ═══ ANALYSIS SECTION — dua kolom ═══ -->
   <div class="row g-3 mb-3">
-    <div class="col-12">
-      <div class="card border-0 shadow-sm">
-        <div class="card-body">
+
+    <!-- Kolom Kiri: Controls + Live Log -->
+    <div class="col-lg-5">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body d-flex flex-column">
           <div class="d-flex justify-content-between align-items-center mb-3">
             <span class="section-title"><i class="bi bi-robot me-1"></i>Analisis Agent</span>
             <span class="small text-muted" id="analysis-status"></span>
           </div>
 
-          <!-- Defined input buttons -->
+          <!-- Tombol Analisis -->
           <div class="analysis-controls d-flex flex-wrap gap-2 mb-3">
-            <button class="btn btn-primary" id="btn-full-scan" onclick="startAnalysis('full_scan')">
+            <button class="btn btn-primary btn-sm" id="btn-full-scan" onclick="startAnalysis('full_scan')">
               <i class="bi bi-broadcast me-1"></i>Analisis Semua Stasiun
             </button>
-            <div class="input-group" style="max-width:320px">
+            <div class="input-group input-group-sm" style="max-width:300px">
               <select class="form-select form-select-sm" id="sel-station"><option value="">Pilih stasiun…</option></select>
               <button class="btn btn-outline-primary btn-sm" onclick="startAnalysis('station', document.getElementById('sel-station').value)">
-                <i class="bi bi-search me-1"></i>Analisis Stasiun
+                <i class="bi bi-search"></i>
               </button>
             </div>
-            <div class="input-group" style="max-width:280px">
+            <div class="input-group input-group-sm" style="max-width:260px">
               <input type="text" class="form-control form-control-sm" id="inp-region" placeholder="Kecamatan / Kabupaten">
               <button class="btn btn-outline-primary btn-sm" onclick="startAnalysis('region', document.getElementById('inp-region').value)">
-                <i class="bi bi-geo-alt me-1"></i>Analisis Wilayah
+                <i class="bi bi-geo-alt"></i>
               </button>
             </div>
           </div>
 
-          <!-- Highlight section (populated after analysis) -->
-          <div id="highlight-section" class="d-none">
-            <div class="row g-3">
-              <div class="col-md-4">
-                <div class="card highlight-card shadow-sm p-3 h-100" id="highlight-urgency-card">
-                  <div class="small text-muted text-uppercase">Urgensi Keseluruhan</div>
-                  <div class="fs-2 fw-bold" id="hl-urgency">–</div>
-                  <div class="small" id="hl-counts"></div>
-                  <div class="mt-2" id="hl-ika"></div>
-                </div>
-              </div>
-              <div class="col-md-4">
-                <div class="card shadow-sm p-3 h-100">
-                  <div class="small text-muted text-uppercase mb-2">Stasiun Kritis</div>
-                  <div id="hl-stations">–</div>
-                </div>
-              </div>
-              <div class="col-md-4">
-                <div class="card shadow-sm p-3 h-100">
-                  <div class="small text-muted text-uppercase mb-2">Rekomendasi Prioritas</div>
-                  <div id="hl-actions">–</div>
-                </div>
-              </div>
-            </div>
-            <div class="mt-2 d-flex gap-2">
+          <!-- Live Log Terminal -->
+          <div class="mb-1 d-flex justify-content-between align-items-center">
+            <span class="small fw-bold text-muted"><i class="bi bi-terminal me-1"></i>Live Log Agent</span>
+            <button class="btn btn-link btn-sm p-0 text-muted" onclick="clearLog()" title="Bersihkan log"><i class="bi bi-trash"></i></button>
+          </div>
+          <div id="log-panel" class="flex-grow-1">
+            <span class="log-line" style="color:#6e7681">— Log agent akan muncul di sini —</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Kolom Kanan: Hasil Analisis Agent -->
+    <div class="col-lg-7">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body d-flex flex-column" id="result-panel">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <span class="section-title"><i class="bi bi-graph-up-arrow me-1"></i>Hasil Analisis Agent</span>
+            <div class="d-flex gap-2" id="result-actions" style="display:none!important">
               <button class="btn btn-outline-secondary btn-sm" onclick="showDetail()">
-                <i class="bi bi-file-text me-1"></i>Detail Analisis
+                <i class="bi bi-file-text me-1"></i>Detail Reasoning
               </button>
-              <button class="btn btn-outline-info btn-sm" id="btn-telegram" onclick="sendTelegram()">
-                <i class="bi bi-send me-1"></i>Kirim ke Telegram
+              <button class="btn btn-outline-info btn-sm" onclick="sendTelegram()">
+                <i class="bi bi-send me-1"></i>Kirim Telegram
               </button>
             </div>
+          </div>
+
+          <!-- Placeholder saat belum ada analisis -->
+          <div id="result-placeholder" class="text-center text-muted py-5 flex-grow-1 d-flex flex-column justify-content-center align-items-center">
+            <i class="bi bi-bar-chart-line" style="font-size:3rem;opacity:.3"></i>
+            <p class="mt-2 mb-0">Klik tombol analisis untuk memulai.<br><small>Hasil akan ditampilkan di sini setelah agent selesai.</small></p>
+          </div>
+
+          <!-- Spinner saat running -->
+          <div id="result-loading" class="text-center py-5 flex-grow-1 d-flex flex-column justify-content-center align-items-center d-none">
+            <div class="spinner-border text-primary mb-3" style="width:3rem;height:3rem"></div>
+            <p class="text-muted mb-0" id="result-loading-text">Agent sedang menganalisis…</p>
+            <small class="text-muted" id="result-elapsed"></small>
+          </div>
+
+          <!-- Konten hasil -->
+          <div id="result-content" class="d-none flex-grow-1 overflow-auto" style="max-height:480px">
+
+            <!-- Baris atas: Urgency + IKA -->
+            <div class="row g-2 mb-3" id="result-top">
+              <div class="col-sm-4">
+                <div class="card text-center p-3 h-100" id="result-urgency-card">
+                  <div class="small text-muted text-uppercase mb-1">Urgensi Keseluruhan</div>
+                  <div class="fs-1 fw-bold" id="result-urgency-icon">–</div>
+                  <div class="fw-bold fs-5" id="result-urgency-text">–</div>
+                  <div class="small text-muted mt-1" id="result-counts">–</div>
+                </div>
+              </div>
+              <div class="col-sm-8">
+                <div class="card p-3 h-100">
+                  <div class="small text-muted text-uppercase mb-2">Indeks Kualitas Air (IKA)</div>
+                  <div id="result-ika" class="small">–</div>
+                  <hr class="my-2">
+                  <div class="small text-muted text-uppercase mb-1">Data Quality</div>
+                  <div id="result-dq" class="small">–</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Stasiun Anomali -->
+            <div class="mb-2">
+              <div class="small fw-bold text-uppercase text-muted mb-2"><i class="bi bi-exclamation-triangle me-1"></i>Stasiun Anomali</div>
+              <div id="result-stations">–</div>
+            </div>
+
+            <!-- Rekomendasi Prioritas -->
+            <div class="mb-2">
+              <div class="small fw-bold text-uppercase text-muted mb-2"><i class="bi bi-list-check me-1"></i>Rekomendasi Prioritas</div>
+              <div id="result-actions-list">–</div>
+            </div>
+
+            <!-- Narasi Analisis Agent -->
+            <div class="mb-1" id="narrative-section" style="display:none">
+              <div class="d-flex justify-content-between align-items-center mb-1">
+                <div class="small fw-bold text-uppercase text-muted"><i class="bi bi-chat-left-text me-1"></i>Narasi Analisis Agent</div>
+                <button class="btn btn-link btn-sm p-0 text-muted" onclick="toggleNarrative()" id="narrative-toggle">
+                  <i class="bi bi-chevron-down"></i> Tampilkan
+                </button>
+              </div>
+              <div id="narrative-body" style="display:none">
+                <div id="narrative-content" class="narrative-box"></div>
+              </div>
+            </div>
+
           </div>
         </div>
       </div>
@@ -199,7 +309,10 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 
 <script>
-let bmkgChart=null, sparingPie=null, sitalaChart=null, _currentJobId=null, _pollTimer=null;
+let bmkgChart=null, sparingPie=null, sitalaChart=null;
+let _currentJobId=null, _pollTimer=null, _logTimer=null;
+let _logOffset=0, _logRunning=false, _analysisStart=0, _elapsedTimer=null;
+
 const map = L.map('map').setView([-6.9,107.6],9);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OSM'}).addTo(map);
 const markers={};
@@ -209,6 +322,66 @@ function uc(u){return u==='TINDAK'?'urgency-TINDAK':u==='WASPADA'?'urgency-WASPA
 function sd(s){return s?(s+'').replace('T',' ').slice(0,16):'–'}
 function mc(w){if(!w)return'#6c757d';const u=w.toUpperCase();return u==='MERAH'?'#dc3545':u==='KUNING'?'#ffc107':u==='HIJAU'?'#198754':'#6c757d'}
 function mkIcon(c){return L.divIcon({className:'',html:`<div style="width:12px;height:12px;border-radius:50%;background:${c};border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4)"></div>`,iconSize:[12,12],iconAnchor:[6,6]})}
+
+// ── Log Panel ─────────────────────────────────────────────────────────────
+function classifyLog(line){
+  if(/\[Phase [12]\]/.test(line)||/CHAIN (START|COMPLETE)/.test(line)) return 'phase';
+  if(/LLM (call|responded)/.test(line)) return 'llm';
+  if(/Step \d+/.test(line)) return 'step';
+  if(/(COMPLETE|DONE|ACCEPTED|CHAIN COMPLETE)/.test(line)) return 'done';
+  if(/FAIL|ERROR|error/.test(line)) return 'err';
+  return '';
+}
+
+function appendLog(lines){
+  const panel = document.getElementById('log-panel');
+  const wasBottom = panel.scrollHeight - panel.scrollTop - panel.clientHeight < 40;
+  lines.forEach(line => {
+    const div = document.createElement('div');
+    div.className = 'log-line ' + classifyLog(line);
+    div.textContent = line;
+    panel.appendChild(div);
+  });
+  if(wasBottom) panel.scrollTop = panel.scrollHeight;
+}
+
+function clearLog(){
+  document.getElementById('log-panel').innerHTML = '<span class="log-line" style="color:#6e7681">— Log dibersihkan —</span>';
+  _logOffset = 0;
+}
+
+async function fetchLog(){
+  try{
+    const r = await fetch('/api/log?offset='+_logOffset);
+    const d = await r.json();
+    if(d.lines && d.lines.length){
+      appendLog(d.lines);
+      _logOffset = d.total;
+    }
+  }catch(e){}
+}
+
+function startLogPolling(){
+  _logRunning = true;
+  _logTimer = setInterval(fetchLog, 1500);
+}
+
+function stopLogPolling(){
+  _logRunning = false;
+  if(_logTimer){ clearInterval(_logTimer); _logTimer=null; }
+  fetchLog(); // fetch sisa log
+}
+
+// ── Elapsed timer ────────────────────────────────────────────────────────
+function startElapsed(){
+  _analysisStart = Date.now();
+  _elapsedTimer = setInterval(()=>{
+    const sec = Math.floor((Date.now()-_analysisStart)/1000);
+    const m = Math.floor(sec/60), s = sec%60;
+    document.getElementById('result-elapsed').textContent = `Waktu berjalan: ${m}m ${s}s`;
+  }, 1000);
+}
+function stopElapsed(){ if(_elapsedTimer){ clearInterval(_elapsedTimer); _elapsedTimer=null; } }
 
 // ── Data loaders ──────────────────────────────────────────────────────────
 async function loadSummary(){
@@ -239,7 +412,6 @@ async function loadOnlimo(){
       .bindPopup(`<b>${s.station_id}</b> — ${s.station_name}<br>Status: <b>${s.status}</b><br>Indeks: ${fmt(s.indeks_mutu,2)}`);
     markers[s.station_id]=m;
   });
-  // Populate station dropdown
   const sel=document.getElementById('sel-station');
   const cur=sel.value;
   sel.innerHTML='<option value="">Pilih stasiun…</option>'+rows.map(s=>`<option value="${s.station_id}">${s.station_id} — ${s.station_name||''}</option>`).join('');
@@ -293,10 +465,24 @@ async function startAnalysis(type, target=''){
   if(type==='station'&&!target){alert('Pilih stasiun terlebih dahulu');return}
   if(type==='region'&&!target){alert('Isi nama wilayah terlebih dahulu');return}
 
+  // Reset UI
   const btns=document.querySelectorAll('.analysis-controls button');
   btns.forEach(b=>{b.disabled=true});
   document.getElementById('analysis-status').innerHTML='<span class="spinner-border spinner-border-sm me-1"></span>Analisis berjalan…';
-  document.getElementById('highlight-section').classList.add('d-none');
+
+  // Show loading state on result panel
+  document.getElementById('result-placeholder').classList.add('d-none');
+  document.getElementById('result-content').classList.add('d-none');
+  document.getElementById('result-loading').classList.remove('d-none');
+  document.getElementById('result-actions').style.display='none';
+  document.getElementById('result-loading-text').textContent=
+    type==='full_scan'?'Menganalisis semua stasiun…':
+    type==='station'?`Menganalisis stasiun ${target}…`:
+    `Menganalisis wilayah ${target}…`;
+
+  // Start elapsed + log
+  stopElapsed(); startElapsed();
+  startLogPolling();
 
   try{
     const res=await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type,target})});
@@ -305,8 +491,11 @@ async function startAnalysis(type, target=''){
     if(_pollTimer)clearInterval(_pollTimer);
     _pollTimer=setInterval(()=>pollAnalysis(job_id,btns),3000);
   }catch(e){
-    document.getElementById('analysis-status').textContent='❌ '+e.message;
+    document.getElementById('analysis-status').textContent='Error: '+e.message;
     btns.forEach(b=>{b.disabled=false});
+    stopElapsed(); stopLogPolling();
+    document.getElementById('result-loading').classList.add('d-none');
+    document.getElementById('result-placeholder').classList.remove('d-none');
   }
 }
 
@@ -318,46 +507,210 @@ async function pollAnalysis(jobId, btns){
     if(d.status==='done'){
       clearInterval(_pollTimer);_pollTimer=null;
       btns.forEach(b=>{b.disabled=false});
-      document.getElementById('analysis-status').textContent='✅ Selesai — '+sd(d.finished_at);
-      renderHighlight(d.result);
-      // Refresh all data panels
+      stopElapsed(); stopLogPolling();
+
+      const elapsed = Math.floor((Date.now()-_analysisStart)/1000);
+      const m=Math.floor(elapsed/60), s=elapsed%60;
+      document.getElementById('analysis-status').textContent=`Selesai dalam ${m}m ${s}s`;
+
+      renderResult(d.result);
       loadSummary();loadOnlimo();loadBmkg();loadSparing();loadSitala();loadAnomalyLog();
+
     }else if(d.status==='error'){
       clearInterval(_pollTimer);_pollTimer=null;
       btns.forEach(b=>{b.disabled=false});
-      document.getElementById('analysis-status').textContent='❌ Error: '+(d.error||'unknown');
+      stopElapsed(); stopLogPolling();
+      document.getElementById('analysis-status').textContent='Error: '+(d.error||'unknown');
+      document.getElementById('result-loading').classList.add('d-none');
+      document.getElementById('result-placeholder').classList.remove('d-none');
+      appendLog(['[ERROR] '+( d.error||'unknown error')]);
     }else{
-      document.getElementById('analysis-status').innerHTML='<span class="spinner-border spinner-border-sm me-1"></span>'+d.status+'…';
+      const sec = Math.floor((Date.now()-_analysisStart)/1000);
+      document.getElementById('analysis-status').innerHTML=
+        `<span class="spinner-border spinner-border-sm me-1"></span>${d.status} (${sec}s)…`;
     }
   }catch(e){console.error('poll',e)}
 }
 
-function renderHighlight(result){
-  if(!result||!result.analysis_highlight){document.getElementById('highlight-section').classList.add('d-none');return}
-  const hl=result.analysis_highlight;
-  document.getElementById('highlight-section').classList.remove('d-none');
+// ── Render Hasil Analisis Agent ───────────────────────────────────────────
+function urgencyEmoji(u){
+  return u==='TINDAK'?'🔴':u==='WASPADA'?'🟡':'🟢';
+}
+function urgencyBadgeClass(u){
+  return u==='TINDAK'?'bg-danger':u==='WASPADA'?'bg-warning text-dark':'bg-success';
+}
 
-  // Urgency card
-  const ucard=document.getElementById('highlight-urgency-card');
-  ucard.className='card highlight-card shadow-sm p-3 h-100 urgency-bg-'+(hl.overall_urgency||'PANTAU');
-  document.getElementById('hl-urgency').textContent=(hl.overall_urgency||'–');
-  document.getElementById('hl-urgency').className='fs-2 fw-bold '+uc(hl.overall_urgency);
-  document.getElementById('hl-counts').textContent=`${hl.total_anomalous||0} anomali · ${hl.total_normal||0} normal`;
+function renderResult(result){
+  document.getElementById('result-loading').classList.add('d-none');
 
-  const ika=result.ika_summary;
-  document.getElementById('hl-ika').innerHTML=ika?`<small class="text-muted">IKA: ${fmt(ika.actual,1)} / ${fmt(ika.target,1)} (gap: ${fmt(ika.gap,1)})</small>`:'';
+  if(!result){
+    document.getElementById('result-placeholder').classList.remove('d-none');
+    return;
+  }
+
+  if(result.status==='no_data'){
+    document.getElementById('result-placeholder').innerHTML=
+      `<i class="bi bi-database-x" style="font-size:3rem;opacity:.3"></i><p class="mt-2 text-muted">${result.message||'Tidak ada data'}</p>`;
+    document.getElementById('result-placeholder').classList.remove('d-none');
+    return;
+  }
+
+  const hl  = result.analysis_highlight || {};
+  const dq  = result.data_quality || {};
+  const ika = result.ika_summary || {};
+  const rel = result.data_reliability || { is_reliable: true, level: 'OK' };
+
+  // ── Reliability Banner ──────────────────────────────────────────────────
+  let bannerHtml = '';
+  if (rel.level === 'SENSOR_FAILURE') {
+    bannerHtml = `<div class="reliability-banner reliability-SENSOR_FAILURE">
+      <b>⚠️ FALSE POSITIVE — SENSOR/TELEMETRY FAILURE</b><br>
+      ${rel.warning || ''}
+      ${rel.dead_stations && rel.dead_stations.length
+        ? `<br><small>Stasiun tanpa data: <b>${rel.dead_stations.join(', ')}</b></small>` : ''}
+    </div>`;
+  } else if (rel.level === 'NO_DATA') {
+    bannerHtml = `<div class="reliability-banner reliability-NO_DATA">
+      <b>🚫 DATA TIDAK TERSEDIA</b><br>${rel.warning || ''}
+    </div>`;
+  } else if (rel.level === 'LOW_QUALITY') {
+    bannerHtml = `<div class="reliability-banner reliability-LOW_QUALITY">
+      <b>⚠️ KUALITAS DATA RENDAH</b><br>${rel.warning || ''}
+    </div>`;
+  }
+  document.getElementById('result-content').insertAdjacentHTML('afterbegin',
+    bannerHtml ? bannerHtml : '');
+
+  // ── Urgency Card ────────────────────────────────────────────────────────
+  const urg = hl.overall_urgency || 'PANTAU';
+  const urgCard = document.getElementById('result-urgency-card');
+
+  if (!rel.is_reliable && urg === 'PANTAU') {
+    // False positive: tampilkan abu-abu dengan label DATA TIDAK VALID
+    urgCard.className = 'card text-center p-3 h-100 urgency-card-unreliable';
+    document.getElementById('result-urgency-icon').textContent = '⚫';
+    document.getElementById('result-urgency-text').innerHTML =
+      `<span style="font-size:.9rem">DATA<br>TIDAK VALID</span>`;
+    document.getElementById('result-counts').textContent =
+      `Bukan genuine PANTAU — ${rel.level.replace('_',' ')}`;
+  } else if (!rel.is_reliable) {
+    // Anomali terdeteksi tapi data juga bermasalah — tampilkan urg + warning stripe
+    urgCard.className = `card text-center p-3 h-100 ${urg==='TINDAK'?'bg-danger text-white':'bg-warning'}`;
+    document.getElementById('result-urgency-icon').textContent = urgencyEmoji(urg) + ' ⚠️';
+    document.getElementById('result-urgency-text').textContent = urg + ' (data tidak lengkap)';
+    document.getElementById('result-counts').textContent =
+      `${hl.total_anomalous||0} anomali · score data: ${rel.score}/100`;
+  } else {
+    // Data reliable — tampilkan normal
+    urgCard.className = `card text-center p-3 h-100 ${urg==='TINDAK'?'bg-danger text-white':urg==='WASPADA'?'bg-warning':'bg-success text-white'}`;
+    document.getElementById('result-urgency-icon').textContent = urgencyEmoji(urg);
+    document.getElementById('result-urgency-text').textContent = urg;
+    document.getElementById('result-counts').textContent =
+      `${hl.total_anomalous||0} anomali · ${hl.total_normal||0} normal`;
+  }
+
+  // IKA
+  document.getElementById('result-ika').innerHTML = ika.actual!=null
+    ? `<div class="d-flex gap-3 flex-wrap">
+        <span><b>IKA Aktual:</b> ${fmt(ika.actual,2)}</span>
+        <span><b>Target:</b> ${fmt(ika.target,2)}</span>
+        <span class="${ika.gap<-7?'text-danger fw-bold':ika.gap<-3?'text-warning fw-bold':'text-success'}"><b>Gap:</b> ${fmt(ika.gap,2)}</span>
+        <span class="badge ${urgencyBadgeClass(ika.urgency)}">${ika.urgency||'–'}</span>
+       </div>`
+    : '<span class="text-muted">Data IKA tidak tersedia</span>';
+
+  // Data Quality
+  document.getElementById('result-dq').innerHTML = dq.overall_score!=null
+    ? `<div class="d-flex gap-3 flex-wrap">
+        <span><b>Score:</b> ${dq.overall_score}/100</span>
+        <span><b>Issues:</b> ${dq.issues_found||0}</span>
+        ${dq.excluded_stations&&dq.excluded_stations.length?`<span class="text-danger"><b>Excluded:</b> ${dq.excluded_stations.join(', ')}</span>`:''}
+       </div>`
+    : '<span class="text-muted">–</span>';
 
   // Stations
-  const stations=hl.top_stations||[];
-  document.getElementById('hl-stations').innerHTML=stations.map(s=>
-    `<div class="mb-2"><b class="${uc(s.urgency)}">${s.station_id}</b> — ${s.station_name||''}<br><small class="text-muted">${s.key_finding||''}</small></div>`
-  ).join('')||'<span class="text-muted">Tidak ada anomali</span>';
+  const stations = hl.top_stations || [];
+  document.getElementById('result-stations').innerHTML = stations.length
+    ? stations.map(s => `
+        <div class="result-station-card ${s.urgency||''}">
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              <span class="badge ${urgencyBadgeClass(s.urgency)} me-1">${s.urgency||'?'}</span>
+              <b>${s.station_id}</b> — ${s.station_name||''}
+            </div>
+            <span class="small text-muted">Indeks: ${fmt(s.indeks_mutu,2)}</span>
+          </div>
+          <div class="small text-muted mt-1">${s.key_finding||''}</div>
+          ${s.pollution_profile?`<div class="small mt-1"><span class="badge bg-secondary me-1">Profil: ${s.pollution_profile}</span>${s.top_suspect?`<span class="badge bg-light text-dark border">Tersangka: ${s.top_suspect}</span>`:''}</div>`:''}
+        </div>`).join('')
+    : '<div class="text-muted small p-2">Tidak ada stasiun anomali terdeteksi.</div>';
 
   // Actions
-  const actions=hl.priority_actions||[];
-  document.getElementById('hl-actions').innerHTML=actions.map(a=>
-    `<div class="mb-1"><span class="badge bg-dark me-1">${a.priority}</span>${a.action}<br><small class="text-muted">Target: ${a.target||'–'} · ${a.deadline||''}</small></div>`
-  ).join('')||'<span class="text-muted">Tidak ada rekomendasi</span>';
+  const actions = hl.priority_actions || [];
+  document.getElementById('result-actions-list').innerHTML = actions.length
+    ? actions.map(a => `
+        <div class="action-item">
+          <span class="badge bg-dark me-1">#${a.priority}</span>
+          <b>${a.action||'–'}</b>
+          <div class="text-muted small mt-1">Target: ${a.target||'–'} · Deadline: ${a.deadline||'–'}</div>
+        </div>`).join('')
+    : '<div class="text-muted small p-2">Tidak ada rekomendasi.</div>';
+
+  // Narasi mentah dari DataAnalystAgent
+  _narrativeVisible = false;
+  document.getElementById('narrative-section').style.display = 'none';
+  document.getElementById('narrative-body').style.display = 'none';
+  if (document.getElementById('narrative-toggle'))
+    document.getElementById('narrative-toggle').innerHTML = '<i class="bi bi-chevron-down"></i> Tampilkan';
+  if (result.analyst_narrative) renderNarrative(result.analyst_narrative);
+
+  // Show content
+  document.getElementById('result-content').classList.remove('d-none');
+  document.getElementById('result-actions').style.display='flex';
+}
+
+// ── Narrative ─────────────────────────────────────────────────────────────
+let _narrativeVisible = false;
+
+function toggleNarrative() {
+  _narrativeVisible = !_narrativeVisible;
+  const body = document.getElementById('narrative-body');
+  const btn  = document.getElementById('narrative-toggle');
+  body.style.display = _narrativeVisible ? 'block' : 'none';
+  btn.innerHTML = _narrativeVisible
+    ? '<i class="bi bi-chevron-up"></i> Sembunyikan'
+    : '<i class="bi bi-chevron-down"></i> Tampilkan';
+}
+
+function renderNarrative(text) {
+  if (!text || !text.trim()) return;
+
+  // Highlight keywords in the narrative text
+  const escaped = text
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  const highlighted = escaped
+    // Section headers (ALL CAPS lines)
+    .replace(/^(COMPLETE ANALYSIS SUMMARY.*|Station .+\(.+\).*|Cross-correlation.*|Causal Evidence.*|Urgency.*|Data Quality.*|Response to Feedback.*)$/gm,
+      '<span class="nar-header">$1</span>')
+    // Urgency keywords
+    .replace(/\b(TINDAK)\b/g, '<span class="nar-tindak">$1</span>')
+    .replace(/\b(WASPADA)\b/g, '<span class="nar-waspada">$1</span>')
+    .replace(/\b(PANTAU)\b/g, '<span class="nar-pantau">$1</span>')
+    // Anomaly markers
+    .replace(/\b(YES|ANOMALY|CEMAR BERAT|CEMAR SEDANG|CEMAR RINGAN)\b/g, '<span class="nar-anomaly">$1</span>')
+    // Keys before colon
+    .replace(/^(- [A-Za-z \/]+)(:)/gm, '<span class="nar-key">$1</span>$2')
+    // Station IDs
+    .replace(/\b(KLHK\d+)\b/g, '<span class="nar-station">$1</span>');
+
+  document.getElementById('narrative-content').innerHTML = highlighted;
+  document.getElementById('narrative-section').style.display = 'block';
+
+  // Auto-expand if there's an anomaly
+  if (text.includes('TINDAK') || text.includes('WASPADA')) {
+    if (!_narrativeVisible) toggleNarrative();
+  }
 }
 
 // ── Detail popup ──────────────────────────────────────────────────────────
@@ -366,7 +719,6 @@ async function showDetail(){
   const modal=new bootstrap.Modal(document.getElementById('detail-modal'));
   document.getElementById('detail-body').innerHTML='<p class="text-muted">Memuat…</p>';
   modal.show();
-
   try{
     const r=await fetch('/api/analyze/'+_currentJobId+'/detail');
     const d=await r.json();
@@ -377,22 +729,16 @@ async function showDetail(){
 function renderDetail(d){
   const body=document.getElementById('detail-body');
   let html='';
-
-  // Data quality
   const dq=d.data_quality||{};
   html+=`<div class="mb-3"><h6>Data Quality</h6><div class="small">Score: <b>${dq.overall_score??'–'}</b>/100 · Issues: ${dq.issues_found??0}</div>`;
   if(dq.outliers&&dq.outliers.length){
     html+='<ul class="small mt-1">';dq.outliers.forEach(o=>{html+=`<li><b>${o.station||o.station_id}</b> ${o.field}: ${o.value} — ${o.issue||o.reason}</li>`});html+='</ul>';
   }
   html+='</div>';
-
-  // Feedback loops
   if(d.feedback_loops>0)html+=`<div class="alert alert-info small">ReportEvaluator melakukan ${d.feedback_loops} feedback loop ke DataAnalyst.</div>`;
   if(d.unresolved_issues&&d.unresolved_issues.length){
     html+='<div class="alert alert-warning small"><b>Isu belum terselesaikan:</b><ul>';d.unresolved_issues.forEach(i=>{html+='<li>'+i+'</li>'});html+='</ul></div>';
   }
-
-  // Per-station reasoning
   const detail=d.detail_reasoning||{};
   const perStation=detail.per_station||[];
   perStation.forEach(st=>{
@@ -408,7 +754,6 @@ function renderDetail(d){
     }
     html+='</div></div>';
   });
-
   if(!perStation.length)html+='<p class="text-muted">Detail reasoning tidak tersedia.</p>';
   body.innerHTML=html;
 }
