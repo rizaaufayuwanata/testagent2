@@ -11,3 +11,14 @@ __pycache__/
 # Python
 .venv/
 venv/
+
+# Buat .gitignore dulu
+echo "wqsa.env
+__pycache__/
+*.pyc
+*.log
+anomaly_log.json
+chain.log
+.env
+" | Out-File -FilePath .gitignore -Encoding UTF8
+
