@@ -1,8 +1,8 @@
 # =============================================================================
-# chain.py — Multi-Agent Pipeline Orchestrator (Hardcoded)
+# chain.py — Multi-Agent Pipeline Orchestrator
 # =============================================================================
 # Phase 1: Python fetch raw data from MySQL (deterministic)
-# Phase 2: DataEvaluatorAgent → validate, clean, flag issues
+# Phase 2: DataEvaluatorAgent → validate, clean via workspace tools
 # Phase 3: DataAnalystAgent → reasoning chain → AnalysisResult
 # Phase 4: ReportEvaluatorAgent → validate → accept OR feedback to Phase 3
 #           Max 2 feedback loops, then force accept
@@ -37,6 +37,7 @@ from data_layer import (
     safe_float,
 )
 from agents import DataEvaluatorAgent, DataAnalystAgent, ReportEvaluatorAgent
+from response_schema import normalize_chain_output
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +51,6 @@ MAX_FEEDBACK_LOOPS = 2
 def parse_target(analysis_type: str, target_value: str = "") -> dict:
     """Parse dashboard input into target dict."""
     if analysis_type == "station" and target_value:
-        # Normalize station ID
         match = re.search(r'KLHK\s*(\d+)', target_value, re.IGNORECASE)
         sid = f"KLHK{match.group(1)}" if match else target_value.upper()
         return {"type": "station", "station_id": sid}
@@ -67,7 +67,6 @@ def parse_target(analysis_type: str, target_value: str = "") -> dict:
 def fetch_raw_data(target: dict) -> dict:
     _log(f"[Phase 1] Fetching raw data — target: {target}")
 
-    # Fetch stations
     if target["type"] == "station":
         stations = get_onlimo_data(station_id=target["station_id"], das=TARGET_DAS)
     elif target["type"] == "location":
@@ -85,7 +84,6 @@ def fetch_raw_data(target: dict) -> dict:
     valid = [s for s in stations if "error" not in s and "info" not in s]
     _log(f"[Phase 1] Stations fetched: {len(valid)}")
 
-    # Pre-filter candidates
     candidates = [
         s for s in valid
         if safe_float(s.get("indeks_mutu")) >= ANOMALY_INDEX_THRESHOLD
@@ -94,7 +92,6 @@ def fetch_raw_data(target: dict) -> dict:
 
     _log(f"[Phase 1] Candidates for analysis: {len(candidates)}")
 
-    # Fetch rainfall per candidate
     rainfall = {}
     for s in candidates:
         sid = s.get("station_id", "")
@@ -104,7 +101,6 @@ def fetch_raw_data(target: dict) -> dict:
             lon=safe_float(s.get("longitude")),
         )
 
-    # Fetch sparing per district
     sparing = {}
     seen = set()
     for s in candidates:
@@ -126,7 +122,6 @@ def fetch_raw_data(target: dict) -> dict:
                 mon[lid] = [m for m in get_sparing_monitoring_data(company_id=lid, days=3) if "error" not in m and "info" not in m]
         sparing[sid] = {"_district": district, "loggers": valid_l, "monitoring": mon}
 
-    # Fetch SITALA
     sitala = [s for s in get_sitala_data(district=TARGET_REGION) if "error" not in s and "info" not in s]
 
     _log(f"[Phase 1] Complete — {len(candidates)} candidates, {len(sitala)} sitala records")
@@ -173,6 +168,71 @@ def _log_results(analysis: dict, report: dict, session_id: str):
 
 
 # =============================================================================
+# RELIABILITY ASSESSMENT
+# =============================================================================
+
+def _assess_reliability(data_quality: dict, raw_bundle: dict) -> dict:
+    """Assess data reliability independent of agent output."""
+    dq_score    = data_quality.get("overall_score", 100) if data_quality else 100
+    excluded    = data_quality.get("excluded_stations", []) if data_quality else []
+    high_null   = data_quality.get("high_null_fields", {}) if data_quality else {}
+    outliers    = data_quality.get("outliers", []) if data_quality else []
+
+    SENSOR_PARAMS = {"cod", "bod", "tss", "do", "ph", "amonia", "nitrat", "turbidity"}
+    sensor_nulls = [k for k in high_null if any(p in k.lower() for p in SENSOR_PARAMS)]
+    is_sensor_failure = len(sensor_nulls) >= 3
+
+    dead_stations = []
+    for s in raw_bundle.get("candidate_stations", []):
+        params = s.get("parameter", {})
+        non_zero = [v for v in params.values() if isinstance(v, (int, float)) and v > 0]
+        if len(non_zero) == 0:
+            sid = s.get("station_id", "")
+            if sid:
+                dead_stations.append(sid)
+
+    is_reliable = (
+        dq_score >= 60
+        and not is_sensor_failure
+        and len(excluded) == 0
+        and len(dead_stations) == 0
+    )
+
+    if is_sensor_failure:
+        level = "SENSOR_FAILURE"
+        warning = (
+            f"SENSOR/TELEMETRY CLUSTER FAILURE — {len(sensor_nulls)} parameter utama "
+            f"tidak memiliki data valid ({', '.join(sensor_nulls[:4])}). "
+            "Hasil PANTAU ini adalah FALSE POSITIVE — bukan berarti kondisi baik."
+        )
+    elif len(dead_stations) > 0:
+        level = "NO_DATA"
+        warning = (
+            f"Stasiun {', '.join(dead_stations[:3])} tidak mengirim data sensor "
+            "(semua nilai 0). Tidak dapat menilai kondisi sebenarnya."
+        )
+    elif dq_score < 60:
+        level = "LOW_QUALITY"
+        warning = (
+            f"Kualitas data rendah (score: {dq_score}/100). "
+            "Hasil analisis mungkin tidak mencerminkan kondisi sebenarnya."
+        )
+    else:
+        level = "OK"
+        warning = None
+
+    return {
+        "is_reliable":        is_reliable,
+        "level":              level,
+        "score":              dq_score,
+        "warning":            warning,
+        "sensor_null_params": sensor_nulls,
+        "dead_stations":      dead_stations,
+        "excluded_stations":  [e.get("station_id", "") for e in excluded] if isinstance(excluded, list) and excluded and isinstance(excluded[0], dict) else excluded,
+    }
+
+
+# =============================================================================
 # MAIN CHAIN RUNNER
 # =============================================================================
 
@@ -180,7 +240,7 @@ def run_chain(analysis_type: str = "full_scan", target_value: str = "",
               session_id: Optional[str] = None) -> dict:
     """
     Run the full 4-phase multi-agent chain.
-    Returns structured dict for dashboard consumption.
+    Returns normalized dict for dashboard consumption.
     """
     ts = datetime.now()
     session_id = session_id or f"dash-{int(ts.timestamp())}"
@@ -193,19 +253,33 @@ def run_chain(analysis_type: str = "full_scan", target_value: str = "",
     raw_bundle = fetch_raw_data(target)
 
     if not raw_bundle["candidate_stations"]:
-        return {
+        return normalize_chain_output({
             "status": "no_data",
+            "session_id": session_id,
+            "timestamp": ts.isoformat(),
             "message": "Tidak ada data stasiun ditemukan. Pastikan ETL sudah dijalankan.",
-            "analysis_highlight": None,
-            "detail_reasoning": None,
-        }
+        })
 
     # ── Phase 2: DataEvaluator ─────────────────────────────────────────────
     _log(f"[Phase 2] Starting DataEvaluator...")
     evaluator = DataEvaluatorAgent()
     cleaned = evaluator.run(raw_bundle)
     data_quality = cleaned.get("data_quality", {})
-    _log(f"[Phase 2] Done in {time.time()-chain_start:.1f}s")
+    _log(f"[Phase 2] Done — score={data_quality.get('overall_score', '?')} | {time.time()-chain_start:.1f}s")
+
+    # Cek apakah masih ada stasiun setelah cleaning
+    remaining_stations = cleaned.get("cleaned_candidate_stations", [])
+    if not remaining_stations:
+        _log(f"[Phase 2] All stations excluded by evaluator — aborting analysis")
+        reliability = _assess_reliability(data_quality, raw_bundle)
+        return normalize_chain_output({
+            "status": "no_data",
+            "session_id": session_id,
+            "timestamp": ts.isoformat(),
+            "message": "Semua stasiun di-exclude oleh evaluator karena data tidak reliable.",
+            "data_quality": data_quality,
+            "data_reliability": reliability,
+        })
 
     # ── Phase 3: DataAnalyst ───────────────────────────────────────────────
     _log(f"[Phase 3] Starting DataAnalyst...")
@@ -239,74 +313,17 @@ def run_chain(analysis_type: str = "full_scan", target_value: str = "",
     _log(f"[Phase 5] Logging results to DB...")
     _log_results(analysis, report, session_id)
 
-    # ── Build final output ─────────────────────────────────────────────────
+    # ── Reliability Assessment ─────────────────────────────────────────────
+    data_reliability = _assess_reliability(data_quality, raw_bundle)
+    _log(f"[Reliability] level={data_reliability['level']} score={data_reliability['score']}")
+
+    # ── Build & normalize final output ─────────────────────────────────────
     anomalous = analysis.get("anomalous_stations", [])
     normal_ct = analysis.get("normal_station_count", 0)
-    _log(f"CHAIN COMPLETE — {len(anomalous)} anomalous, {normal_ct} normal | total={time.time()-chain_start:.1f}s")
+    elapsed = time.time() - chain_start
+    _log(f"CHAIN COMPLETE — {len(anomalous)} anomalous, {normal_ct} normal | total={elapsed:.1f}s")
 
-    # ── Reliability Assessment ─────────────────────────────────────────────
-    # Deteksi false positive: hasil PANTAU tapi data tidak bisa dipercaya
-    dq_score    = data_quality.get("overall_score", 100) if data_quality else 100
-    excluded    = data_quality.get("excluded_stations", []) if data_quality else []
-    high_null   = data_quality.get("high_null_fields", {}) if data_quality else {}
-    outliers    = data_quality.get("outliers", []) if data_quality else []
-
-    # Sensor/telemetry failure: parameter utama mayoritas 0 atau null
-    SENSOR_PARAMS = {"cod", "bod", "tss", "do", "ph", "amonia", "nitrat", "turbidity"}
-    sensor_nulls = [k for k in high_null if any(p in k.lower() for p in SENSOR_PARAMS)]
-    is_sensor_failure = len(sensor_nulls) >= 3
-
-    # Kandidat stations dari raw_bundle yang punya data 0 semua
-    dead_stations = []
-    for s in raw_bundle.get("candidate_stations", []):
-        params = s.get("parameter", {})
-        non_zero = [v for v in params.values() if isinstance(v, (int, float)) and v > 0]
-        if len(non_zero) == 0:
-            dead_stations.append(s.get("station_id", ""))
-    dead_stations = [s for s in dead_stations if s]
-
-    is_reliable = (
-        dq_score >= 60
-        and not is_sensor_failure
-        and len(excluded) == 0
-        and len(dead_stations) == 0
-    )
-
-    if is_sensor_failure:
-        reliability_level = "SENSOR_FAILURE"
-        reliability_msg   = (
-            f"SENSOR/TELEMETRY CLUSTER FAILURE — {len(sensor_nulls)} parameter utama "
-            f"tidak memiliki data valid ({', '.join(sensor_nulls[:4])}). "
-            "Hasil PANTAU ini adalah FALSE POSITIVE — bukan berarti kondisi baik."
-        )
-    elif len(dead_stations) > 0:
-        reliability_level = "NO_DATA"
-        reliability_msg   = (
-            f"Stasiun {', '.join(dead_stations[:3])} tidak mengirim data sensor "
-            "(semua nilai 0). Tidak dapat menilai kondisi sebenarnya."
-        )
-    elif dq_score < 60:
-        reliability_level = "LOW_QUALITY"
-        reliability_msg   = (
-            f"Kualitas data rendah (score: {dq_score}/100). "
-            "Hasil analisis mungkin tidak mencerminkan kondisi sebenarnya."
-        )
-    else:
-        reliability_level = "OK"
-        reliability_msg   = None
-
-    data_reliability = {
-        "is_reliable":       is_reliable,
-        "level":             reliability_level,
-        "score":             dq_score,
-        "warning":           reliability_msg,
-        "sensor_null_params": sensor_nulls,
-        "dead_stations":     dead_stations,
-        "excluded_stations": excluded,
-    }
-    _log(f"[Reliability] level={reliability_level} score={dq_score} dead={dead_stations} sensor_null={sensor_nulls}")
-
-    return {
+    return normalize_chain_output({
         "status":             "done",
         "session_id":         session_id,
         "timestamp":          ts.isoformat(),
@@ -321,4 +338,4 @@ def run_chain(analysis_type: str = "full_scan", target_value: str = "",
         "ika_summary":        report.get("ika_summary"),
         "telegram_message":   report.get("telegram_message"),
         "unresolved_issues":  report.get("unresolved_issues", []),
-    }
+    })

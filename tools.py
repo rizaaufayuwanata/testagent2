@@ -131,7 +131,15 @@ def think(thought: str) -> str:
 
 
 def calculate_pollution_profile(cod: float, bod: float) -> str:
-    """COD/BOD ratio → pollution source profile."""
+    """COD/BOD ratio → pollution source profile. Handles None inputs."""
+    if cod is None or bod is None:
+        return json.dumps({
+            "error": "COD atau BOD null (sensor tidak kirim data)",
+            "cod": cod, "bod": bod,
+            "pollution_profile": "TIDAK_BISA_DIHITUNG",
+            "reason": "Parameter null — kemungkinan sensor failure",
+        }, ensure_ascii=False)
+
     if bod <= 0:
         return json.dumps({"error": "BOD is zero or negative", "cod": cod, "bod": bod})
 
@@ -152,7 +160,7 @@ def calculate_pollution_profile(cod: float, bod: float) -> str:
 
 
 def detect_anomaly(station_data: str) -> str:
-    """Detect anomaly in station data."""
+    """Detect anomaly in station data. Handles None/null sensor readings."""
     try:
         data = json.loads(station_data) if isinstance(station_data, str) else station_data
         if isinstance(data, list):
@@ -162,12 +170,24 @@ def detect_anomaly(station_data: str) -> str:
         status = data.get("status", "").upper()
         station_id = data.get("station_id", "unknown")
         params = data.get("parameter", {})
-        cod = safe_float(params.get("cod", data.get("cod")))
-        bod = safe_float(params.get("bod", data.get("bod")))
-        tss = safe_float(params.get("tss", data.get("tss")))
+
+        # Ambil params — None = sensor tidak kirim data
+        raw_cod = params.get("cod", data.get("cod"))
+        raw_bod = params.get("bod", data.get("bod"))
+        raw_tss = params.get("tss", data.get("tss"))
+
+        cod = safe_float(raw_cod) if raw_cod is not None else None
+        bod = safe_float(raw_bod) if raw_bod is not None else None
+        tss = safe_float(raw_tss) if raw_tss is not None else None
 
         is_anomaly = False
         reasons = []
+        null_params = []
+
+        # Track null parameters
+        if cod is None: null_params.append("COD")
+        if bod is None: null_params.append("BOD")
+        if tss is None: null_params.append("TSS")
 
         if index >= ANOMALY_INDEX_THRESHOLD:
             is_anomaly = True
@@ -185,8 +205,13 @@ def detect_anomaly(station_data: str) -> str:
                     is_anomaly = True
                     reasons.append(f"Perubahan {change:.1f}% dari baseline ({avg:.2f})")
 
-        param_values = {"COD": cod, "BOD": bod, "TSS": tss}
-        critical = max(param_values, key=lambda k: param_values[k]) if any(param_values.values()) else "N/A"
+        # Tentukan critical parameter — hanya dari yang non-null
+        param_values = {}
+        if cod is not None: param_values["COD"] = cod
+        if bod is not None: param_values["BOD"] = bod
+        if tss is not None: param_values["TSS"] = tss
+
+        critical = max(param_values, key=lambda k: param_values[k]) if param_values else "N/A"
 
         return json.dumps({
             "station_id": station_id,
@@ -196,6 +221,7 @@ def detect_anomaly(station_data: str) -> str:
             "critical_parameter": critical,
             "critical_value": param_values.get(critical, 0),
             "cod": cod, "bod": bod, "tss": tss,
+            "null_params": null_params,
             "history_count": len(history),
         }, ensure_ascii=False, indent=2)
     except Exception as e:

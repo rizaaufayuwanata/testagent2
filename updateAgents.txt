@@ -1,0 +1,67 @@
+PERBEDAAN agents.py VERSI 1 vs VERSI 2
+
+RINGKASAN UTAMA:
+- Versi 1: Data cleaning dilakukan oleh LLM yang menghasilkan JSON berisi data bersih (rentan error format).
+- Versi 2: Menggunakan CleaningWorkspace (in-memory) yang dimodifikasi oleh tools deterministik. LLM hanya output ringkasan, data bersih diambil dari workspace.
+
+PERUBAHAN SPESIFIK:
+
+1. IMPORT BARU
+   - Versi 2 menambahkan: import copy, dari response_schema import parse_agent_json, normalize_agent_output
+
+2. KONSTANTA DOMAIN BOUNDS (BARU DI VERSI 2)
+   - DOMAIN_BOUNDS: batas fisik tiap parameter (pH, DO, COD, BOD, dll)
+   - KEY_PARAMS: parameter kunci untuk deteksi sensor mati
+
+3. KELAS CleaningWorkspace (BARU TOTAL DI VERSI 2)
+   - Menyimpan data stasiun, rainfall, sparing, sitala
+   - Method: apply_domain_bounds(), detect_dead_sensors(), exclude_station_tool(), set_parameter_null_tool(), replace_parameter_tool()
+   - Method: to_cleaned_bundle(), get_quality_report()
+   - Mencatat setiap modifikasi, flag, dan pengurangan skor kualitas
+
+4. TOOLS EVALUATOR (BERTAMBAH)
+   - Versi 1: 3 tools (think, check_data_quality, flag_outlier)
+   - Versi 2: +5 tools baru
+     * apply_domain_bounds
+     * detect_dead_sensors
+     * exclude_station
+     * set_parameter_null
+     * replace_parameter
+
+5. SYSTEM PROMPT EVALUATOR
+   - Versi 1: minta output JSON besar dengan cleaned_* fields
+   - Versi 2: minta ringkasan kecil; data sudah disimpan oleh tools
+
+6. DataEvaluatorAgent.run()
+   - Versi 1: _run_loop() -> _parse_json() -> fallback assign raw bundle
+   - Versi 2: buat workspace -> tool_funcs closure -> _run_loop() -> workspace.to_cleaned_bundle()
+     * Data bersih TIDAK tergantung pada output JSON LLM
+
+7. PENANGANAN MISSING DATA DI ANALYST
+   - Versi 2 menambahkan instruksi dalam system prompt Analyst:
+     * Jika parameter null (sensor failure), skip parameter tersebut
+     * Jika COD/BOD null, tidak bisa hitung pollution profile
+     * Jika sparing kosong, laporkan "no monitoring data available"
+     * Jika sitala kosong, ika_gap = null
+
+8. ANALYST TOOL NAMES (BARU)
+   - ANALYST_TOOL_NAMES = [...] untuk referensi ReportEvaluator
+
+9. ReportEvaluator SCOPE AWARENESS
+   - Versi 2 menambahkan batasan bahwa Analyst tidak bisa mengambil data baru, inspeksi sensor, atau hubungi kantor eksternal
+   - Feedback hanya boleh berisi pertanyaan yang bisa dijawab dengan tools Analyst
+
+10. FUNGSI _extract_narrative (DIPISAHKAN)
+    - Versi 1: logika inline di DataAnalystAgent.run()
+    - Versi 2: fungsi terpisah untuk mengambil teks narasi dari collected messages
+
+11. NORMALISASI OUTPUT
+    - Versi 2 memanggil parse_agent_json() dan normalize_agent_output() di setiap agent
+    - Menjamin struktur JSON konsisten meskipun LLM output tidak sempurna
+
+MANFAAT PERUBAHAN:
+- Data cleaning lebih deterministik dan reliable
+- Tidak bergantung pada kemampuan LLM menghasilkan JSON besar tanpa error
+- Setiap perubahan data terekam (audit trail)
+- Penanganan sensor failure / null values lebih sistematis
+- Feedback loop lebih terbatas pada hal yang bisa dikerjakan Analyst

@@ -1,0 +1,56 @@
+PERBEDAAN chain.py VERSI 1 vs VERSI 2
+
+RINGKASAN UTAMA:
+- Versi 1: Langsung return dict tanpa normalisasi, tidak menangani kasus semua stasiun di-exclude.
+- Versi 2: Normalisasi output via normalize_chain_output, early exit jika tidak ada stasiun tersisa setelah cleaning, reliability assessment dipisah ke fungsi.
+
+PERUBAHAN SPESIFIK:
+
+1. IMPORT BARU
+   - Versi 2: from response_schema import normalize_chain_output
+
+2. FUNGSI _assess_reliability (BARU DIPISAHKAN)
+   - Versi 1: logika reliability (40+ baris) ditulis inline di run_chain()
+   - Versi 2: diekstrak ke fungsi terpisah
+     * Menerima data_quality dan raw_bundle
+     * Mengembalikan dict: is_reliable, level, score, warning, sensor_null_params, dead_stations, excluded_stations
+   - Manfaat: modularitas, dapat diuji terpisah
+
+3. PENANGANAN STASIUN HABIS SETELAH EVALUATOR (BARU)
+   - Versi 1: tidak dicek; jika cleaned_candidate_stations kosong, Analyst akan dipanggil dan kemungkinan error
+   - Versi 2:
+     remaining_stations = cleaned.get("cleaned_candidate_stations", [])
+     if not remaining_stations:
+         return normalize_chain_output({
+             "status": "no_data",
+             "message": "Semua stasiun di-exclude oleh evaluator karena data tidak reliable."
+         })
+   - Mencegah pemanggilan Analyst yang sia-sia
+
+4. NORMALISASI OUTPUT
+   - Versi 1: return dict langsung
+   - Versi 2: return normalize_chain_output(dict)
+     * Menjamin field seperti analysis_highlight, kpi_update, dll selalu ada dengan nilai default
+     * Dashboard tidak perlu menangani banyak kemungkinan missing key
+
+5. LOGING TAMBAHAN
+   - Versi 2:
+     * Setelah Phase 2: _log(f"Done — score={...}")
+     * Jika semua stasiun di-exclude: _log("All stations excluded...")
+   - Versi 1: hanya log awal dan akhir
+
+6. PENANGANAN EXCLUDED_STATIONS LEBIH AMAN
+   - Versi 2 di dalam _assess_reliability:
+     "excluded_stations": [e.get("station_id", "") for e in excluded] if isinstance(excluded, list) and excluded and isinstance(excluded[0], dict) else excluded
+   - Versi 1 langsung pakai excluded (bisa list of dict atau list of string)
+
+7. KOMENTAR HEADER
+   - Versi 1: "Multi-Agent Pipeline Orchestrator (Hardcoded)"
+   - Versi 2: "Multi-Agent Pipeline Orchestrator" (kata "Hardcoded" dihapus)
+
+MANFAAT PERUBAHAN:
+- Pipeline lebih robust terhadap kegagalan evaluator
+- Output terstandardisasi untuk dashboard
+- Kode lebih modular (reliability assessment bisa dipanggil ulang)
+- Early exit menghemat waktu dan resource API jika tidak ada data layak analisis
+- Dashboard mendapat pesan jelas jika semua stasiun di-exclude

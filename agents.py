@@ -1,15 +1,16 @@
 # =============================================================================
 # agents.py — Multi-Agent Pipeline for WQSA (3 agents)
 # =============================================================================
-# Agent 1: DataEvaluatorAgent  — validate, clean, flag data quality issues
-# Agent 2: DataAnalystAgent    — reasoning chain (detect → profile → rain → sparing → correlate → ika)
-# Agent 3: ReportEvaluatorAgent — validate analysis consistency, format for dashboard (or send feedback)
+# Agent 1: DataEvaluatorAgent  — validate, clean, normalize via workspace tools
+# Agent 2: DataAnalystAgent    — reasoning chain (detect→profile→rain→sparing→correlate→ika)
+# Agent 3: ReportEvaluatorAgent — validate analysis consistency, format for dashboard
 # =============================================================================
 
 import sys
 sys.stdout.reconfigure(encoding='utf-8')
 sys.stderr.reconfigure(encoding='utf-8')
 
+import copy
 import json
 import logging
 import time
@@ -30,6 +31,7 @@ from tools import (
     calculate_ika_gap, cross_correlate_evidence,
     safe_float,
 )
+from response_schema import parse_agent_json, normalize_agent_output
 
 logger = logging.getLogger(__name__)
 
@@ -55,21 +57,14 @@ def _log(msg: str):
     logger.info(msg)
 
 
-# Kumpulkan semua teks dari assistant dalam satu loop — dibaca oleh DataAnalystAgent
+# Kumpulkan semua teks dari assistant dalam satu loop
 _loop_collected_texts: list[str] = []
-
-
-_ANALYSIS_KEYWORDS = [
-    "ANALYSIS RESULTS SUMMARY", "COMPLETE ANALYSIS SUMMARY",
-    "ANALYSIS SUMMARY", "Anomaly Status:", "Pollution Profile:",
-    "Urgency:", "Causal Evidence:", "IKA Gap:",
-]
 
 
 def _run_loop(model, system_prompt, user_content, tools_list, tool_funcs, max_steps=30, label="Agent"):
     """Generic agentic loop shared by DataEvaluator and DataAnalyst."""
     global _loop_collected_texts
-    _loop_collected_texts = []          # reset setiap loop baru
+    _loop_collected_texts = []
 
     messages = [
         {"role": "system", "content": system_prompt},
@@ -92,7 +87,6 @@ def _run_loop(model, system_prompt, user_content, tools_list, tool_funcs, max_st
 
         msg = response.choices[0].message
 
-        # Kumpulkan semua teks dari assistant (termasuk yang disertai tool calls)
         if msg.content and msg.content.strip():
             _loop_collected_texts.append(msg.content.strip())
 
@@ -134,23 +128,325 @@ def _run_loop(model, system_prompt, user_content, tools_list, tool_funcs, max_st
     return json.dumps({"error": f"Exceeded {max_steps} steps", "partial": True})
 
 
-def _parse_json(raw: str, label: str) -> dict:
-    """Parse LLM JSON output, stripping markdown fences."""
-    try:
-        clean = raw.strip()
-        if clean.startswith("```"):
-            clean = clean.split("```", 2)[1]
-            if clean.startswith("json"):
-                clean = clean[4:]
-            clean = clean.rsplit("```", 1)[0].strip()
-        return json.loads(clean)
-    except json.JSONDecodeError as e:
-        logger.error(f"[{label}] JSON parse failed: {e}\nRaw: {raw[:500]}")
-        return {"error": f"JSON parse failed: {e}", "raw_output": raw[:2000]}
+# =============================================================================
+# CLEANING WORKSPACE — In-memory data store modified by evaluator tools
+# =============================================================================
+# Data hidup di sini, bukan di JSON output LLM.
+# Bahkan kalau LLM JSON-nya rusak, data sudah bersih di workspace.
+# =============================================================================
+
+# Batas domain fisik untuk parameter kualitas air
+# (param_name, min, max, zero_is_sensor_failure, typical_max_natural)
+DOMAIN_BOUNDS = {
+    "ph":        {"min": 0,   "max": 14,    "zero_fail": True,  "suspect_above": 12},
+    "do":        {"min": 0,   "max": 20,    "zero_fail": False, "suspect_above": 18},
+    "cod":       {"min": 0,   "max": 500,   "zero_fail": False, "suspect_above": 300},
+    "bod":       {"min": 0,   "max": 200,   "zero_fail": False, "suspect_above": 100},
+    "tss":       {"min": 0,   "max": 1000,  "zero_fail": False, "suspect_above": 500},
+    "amonia":    {"min": 0,   "max": 50,    "zero_fail": False, "suspect_above": 30},
+    "nitrat":    {"min": 0,   "max": 100,   "zero_fail": False, "suspect_above": 50},
+    "nitrit":    {"min": 0,   "max": 10,    "zero_fail": False, "suspect_above": 5},
+    "suhu":      {"min": 10,  "max": 50,    "zero_fail": True,  "suspect_above": 45},
+    "turbidity": {"min": 0,   "max": 4000,  "zero_fail": False, "suspect_above": 2000},
+    "dhl":       {"min": 0.5, "max": 50000, "zero_fail": True,  "suspect_above": 5000},
+    "ews_per":   {"min": 0,   "max": 100,   "zero_fail": False, "suspect_above": 100},
+}
+
+# Parameter kunci — kalau mayoritas ini 0/null, stasiun dianggap mati
+KEY_PARAMS = {"cod", "bod", "do", "ph", "tss", "amonia"}
+
+
+class CleaningWorkspace:
+    """
+    In-memory workspace untuk data cleaning.
+    Dimodifikasi oleh evaluator tools secara deterministik.
+    Setelah evaluator selesai, to_cleaned_bundle() menghasilkan data bersih.
+    """
+
+    def __init__(self, raw_bundle: dict):
+        self.stations = copy.deepcopy(raw_bundle.get("candidate_stations", []))
+        self.all_stations = copy.deepcopy(raw_bundle.get("all_stations", []))
+        self.rainfall = copy.deepcopy(raw_bundle.get("rainfall", {}))
+        self.sparing = copy.deepcopy(raw_bundle.get("sparing", {}))
+        self.sitala = copy.deepcopy(raw_bundle.get("sitala", []))
+
+        self.target = raw_bundle.get("target", {})
+        self.region = raw_bundle.get("region", TARGET_REGION)
+        self.das = raw_bundle.get("das", TARGET_DAS)
+        self.fetch_timestamp = raw_bundle.get("fetch_timestamp", "")
+
+        # Tracking
+        self.excluded_stations: list[dict] = []
+        self.flags: list[dict] = []
+        self.modifications: list[dict] = []
+        self.null_warnings: list[dict] = []
+        self._quality_deductions = 0
+
+    # ── Tool: Apply domain bounds ────────────────────────────────────────
+
+    def apply_domain_bounds(self) -> str:
+        """
+        Cek semua parameter di semua stasiun terhadap batas fisik.
+        - None/null dari DB → flag sebagai "sensor tidak kirim data"
+        - Nilai di luar batas fisik → set null + flag
+        - Nilai 0 pada parameter yang tidak mungkin 0 → set null + flag
+        Returns summary JSON.
+        """
+        violations = []
+        null_from_db = []
+
+        for station in self.stations:
+            sid = station.get("station_id", "?")
+            params = station.get("parameter", {})
+            if not isinstance(params, dict):
+                continue
+
+            for param_name, bounds in DOMAIN_BOUNDS.items():
+                raw_val = params.get(param_name)
+
+                # None dari DB = sensor tidak kirim data
+                if raw_val is None:
+                    null_from_db.append({"station_id": sid, "param": param_name})
+                    self.flags.append({
+                        "station_id": sid,
+                        "field": param_name,
+                        "value": None,
+                        "new_value": None,
+                        "reason": f"{param_name} null — sensor tidak mengirim data",
+                        "severity": "warning",
+                        "action": "already_null",
+                    })
+                    self._quality_deductions += 1
+                    continue
+
+                val = safe_float(raw_val)
+                violated = False
+                reason = ""
+
+                # Cek batas fisik
+                if val < bounds["min"] or val > bounds["max"]:
+                    reason = (
+                        f"{param_name}={val} di luar batas fisik "
+                        f"[{bounds['min']}, {bounds['max']}]"
+                    )
+                    violated = True
+
+                # Cek zero = sensor failure
+                elif val == 0 and bounds["zero_fail"]:
+                    reason = (
+                        f"{param_name}=0 — sensor kemungkinan mati "
+                        f"(parameter ini tidak mungkin 0 di perairan alami)"
+                    )
+                    violated = True
+
+                # Cek suspect (di atas threshold wajar)
+                elif val > bounds["suspect_above"]:
+                    reason = (
+                        f"{param_name}={val} di atas batas wajar "
+                        f"({bounds['suspect_above']}), kemungkinan sensor error"
+                    )
+                    violated = True
+
+                if violated:
+                    params[param_name] = None  # Set null
+                    self.flags.append({
+                        "station_id": sid,
+                        "field": param_name,
+                        "value": val,
+                        "new_value": None,
+                        "reason": reason,
+                        "severity": "critical",
+                        "action": "set_null",
+                    })
+                    self._quality_deductions += 3
+                    violations.append({
+                        "station_id": sid,
+                        "param": param_name,
+                        "value": val,
+                        "reason": reason,
+                    })
+
+        return json.dumps({
+            "total_checked": sum(
+                len([p for p in s.get("parameter", {}) if s.get("parameter", {}).get(p) is not None])
+                for s in self.stations
+            ),
+            "null_from_db": len(null_from_db),
+            "null_params": null_from_db[:20],
+            "violations_found": len(violations),
+            "violations": violations[:30],
+        }, ensure_ascii=False, indent=2)
+
+    # ── Tool: Detect dead sensors ────────────────────────────────────────
+
+    def detect_dead_sensors(self) -> str:
+        """
+        Deteksi stasiun dengan sensor mati:
+        - Semua parameter 0/null → DEAD
+        - Mayoritas key params 0/null → SENSOR_CLUSTER_FAILURE
+        Returns summary dan auto-exclude dead stations.
+        """
+        results = []
+        to_exclude = []
+
+        for station in self.stations:
+            sid = station.get("station_id", "?")
+            params = station.get("parameter", {})
+            if not isinstance(params, dict):
+                continue
+
+            # Hitung parameter non-null non-zero
+            total_params = 0
+            nonzero_params = 0
+            key_nonzero = 0
+            key_total = 0
+
+            for p, v in params.items():
+                fv = safe_float(v) if v is not None else None
+                total_params += 1
+                if fv is not None and fv > 0:
+                    nonzero_params += 1
+                if p in KEY_PARAMS:
+                    key_total += 1
+                    if fv is not None and fv > 0:
+                        key_nonzero += 1
+
+            if total_params == 0:
+                status = "NO_DATA"
+                to_exclude.append((sid, "Tidak ada data parameter"))
+            elif nonzero_params == 0:
+                status = "DEAD"
+                to_exclude.append((sid, "Semua parameter 0/null — sensor mati"))
+            elif key_total > 0 and key_nonzero / key_total < 0.5:
+                status = "SENSOR_CLUSTER_FAILURE"
+                missing = [p for p in KEY_PARAMS if safe_float(params.get(p)) in (None, 0)]
+                self.flags.append({
+                    "station_id": sid,
+                    "field": "key_params",
+                    "value": f"{key_nonzero}/{key_total} active",
+                    "reason": f"Sensor cluster failure — parameter kunci mati: {', '.join(missing)}",
+                    "severity": "critical",
+                    "action": "flag",
+                })
+                self._quality_deductions += 10
+            else:
+                status = "OK"
+
+            results.append({
+                "station_id": sid,
+                "status": status,
+                "total_params": total_params,
+                "nonzero_params": nonzero_params,
+                "key_params_active": f"{key_nonzero}/{key_total}",
+            })
+
+        # Auto-exclude dead stations
+        for sid, reason in to_exclude:
+            self._exclude(sid, reason)
+            self._quality_deductions += 15
+
+        return json.dumps({
+            "stations_checked": len(results),
+            "dead_count": len(to_exclude),
+            "results": results,
+        }, ensure_ascii=False, indent=2)
+
+    # ── Tool: Exclude station ────────────────────────────────────────────
+
+    def exclude_station_tool(self, station_id: str, reason: str) -> str:
+        """Remove a station from cleaned output."""
+        return json.dumps(self._exclude(station_id, reason), ensure_ascii=False)
+
+    def _exclude(self, station_id: str, reason: str) -> dict:
+        before = len(self.stations)
+        self.stations = [s for s in self.stations if s.get("station_id") != station_id]
+        after = len(self.stations)
+        removed = before - after
+        entry = {"station_id": station_id, "reason": reason, "removed": removed > 0}
+        self.excluded_stations.append(entry)
+        return entry
+
+    # ── Tool: Replace parameter value ────────────────────────────────────
+
+    def replace_parameter_tool(self, station_id: str, param: str,
+                                new_value, reason: str) -> str:
+        """Replace a parameter value in a station."""
+        for s in self.stations:
+            if s.get("station_id") == station_id:
+                params = s.get("parameter", {})
+                old_val = params.get(param)
+                params[param] = new_value
+                mod = {
+                    "station_id": station_id, "param": param,
+                    "old_value": old_val, "new_value": new_value,
+                    "reason": reason,
+                }
+                self.modifications.append(mod)
+                return json.dumps(mod, ensure_ascii=False)
+        return json.dumps({"error": f"Station {station_id} not found"})
+
+    # ── Tool: Set parameter null ─────────────────────────────────────────
+
+    def set_parameter_null_tool(self, station_id: str, param: str,
+                                 reason: str) -> str:
+        """Mark a parameter as null (sensor mati/unreliable)."""
+        return self.replace_parameter_tool(station_id, param, None, reason)
+
+    # ── Output methods ───────────────────────────────────────────────────
+
+    def to_cleaned_bundle(self) -> dict:
+        """Return the full cleaned data bundle for the analyst."""
+        return {
+            "target": self.target,
+            "fetch_timestamp": self.fetch_timestamp,
+            "all_stations": self.all_stations,
+            "cleaned_candidate_stations": self.stations,
+            "cleaned_rainfall": self.rainfall,
+            "cleaned_sparing": self.sparing,
+            "cleaned_sitala": self.sitala,
+            "region": self.region,
+            "das": self.das,
+            "data_quality": self.get_quality_report(),
+        }
+
+    def get_quality_report(self) -> dict:
+        """Return the quality assessment."""
+        score = max(0, 100 - self._quality_deductions)
+        high_null = {}
+
+        # Hitung null percentage per parameter di semua stasiun
+        if self.stations:
+            param_nulls: dict[str, int] = {}
+            param_totals: dict[str, int] = {}
+            for s in self.stations:
+                for p, v in s.get("parameter", {}).items():
+                    param_totals[p] = param_totals.get(p, 0) + 1
+                    if v is None or safe_float(v) == 0:
+                        param_nulls[p] = param_nulls.get(p, 0) + 1
+            for p, count in param_nulls.items():
+                total = param_totals.get(p, 1)
+                if count / total > 0.5:
+                    pct = round(count / total * 100, 1)
+                    high_null[p] = f"{pct}%"
+                    self.null_warnings.append({
+                        "dataset": "onlimo",
+                        "field": p,
+                        "null_pct": pct,
+                    })
+
+        return {
+            "overall_score": score,
+            "issues_found": len(self.flags),
+            "outliers": [f for f in self.flags if f.get("severity") == "critical"],
+            "null_warnings": self.null_warnings,
+            "high_null_fields": high_null,
+            "excluded_stations": self.excluded_stations,
+            "modifications": self.modifications[:20],
+        }
 
 
 # =============================================================================
-# AGENT 1 — DataEvaluatorAgent (data quality validation)
+# AGENT 1 — DataEvaluatorAgent
 # =============================================================================
 
 EVALUATOR_TOOLS = [
@@ -162,8 +458,30 @@ EVALUATOR_TOOLS = [
         }, "required": ["thought"]}
     }},
     {"type": "function", "function": {
+        "name": "apply_domain_bounds",
+        "description": (
+            "Check ALL parameters on ALL stations against physical bounds. "
+            "Auto-sets values outside physical range to null. "
+            "Bounds: pH [0,14], DO [0,20], suhu [10,50], DHL [>0.5], "
+            "amonia [0,50], nitrat [0,100], COD [0,500], BOD [0,200]. "
+            "Also flags zero values for parameters that cannot be zero in natural water "
+            "(pH, DHL, suhu). Call this FIRST."
+        ),
+        "parameters": {"type": "object", "properties": {}, "required": []}
+    }},
+    {"type": "function", "function": {
+        "name": "detect_dead_sensors",
+        "description": (
+            "Detect stations with dead sensors. "
+            "All params 0/null = DEAD (auto-excluded). "
+            ">50% key params (COD,BOD,DO,pH,TSS,amonia) zero = SENSOR_CLUSTER_FAILURE. "
+            "Call this AFTER apply_domain_bounds."
+        ),
+        "parameters": {"type": "object", "properties": {}, "required": []}
+    }},
+    {"type": "function", "function": {
         "name": "check_data_quality",
-        "description": "Check a dataset for nulls, zeros, missing fields, and outliers. Returns quality report.",
+        "description": "Check a specific dataset for nulls, zeros, missing fields, and outliers.",
         "parameters": {"type": "object", "properties": {
             "dataset_name": {"type": "string", "description": "Which dataset: 'onlimo', 'rainfall', 'sparing', 'sitala'"},
             "data_json": {"type": "string", "description": "JSON string of the dataset to check"}
@@ -174,16 +492,43 @@ EVALUATOR_TOOLS = [
         "description": "Flag a specific field value as an outlier with reasoning.",
         "parameters": {"type": "object", "properties": {
             "station_id": {"type": "string"},
-            "field_name": {"type": "string", "description": "e.g. 'amonia', 'cod', 'indeks_mutu'"},
+            "field_name": {"type": "string"},
             "value": {"type": "number"},
-            "reason": {"type": "string", "description": "Why this value is suspicious"}
+            "reason": {"type": "string"}
         }, "required": ["station_id", "field_name", "value", "reason"]}
+    }},
+    {"type": "function", "function": {
+        "name": "exclude_station",
+        "description": "Remove a station from cleaned output entirely. Use when data is too unreliable for analysis.",
+        "parameters": {"type": "object", "properties": {
+            "station_id": {"type": "string"},
+            "reason": {"type": "string"}
+        }, "required": ["station_id", "reason"]}
+    }},
+    {"type": "function", "function": {
+        "name": "set_parameter_null",
+        "description": "Mark a specific parameter as null (sensor mati/unreliable). Keeps the station but removes the bad value.",
+        "parameters": {"type": "object", "properties": {
+            "station_id": {"type": "string"},
+            "param": {"type": "string", "description": "Parameter name: cod, bod, tss, do, ph, nitrat, nitrit, amonia, suhu, turbidity, dhl"},
+            "reason": {"type": "string"}
+        }, "required": ["station_id", "param", "reason"]}
+    }},
+    {"type": "function", "function": {
+        "name": "replace_parameter",
+        "description": "Replace a parameter value with a corrected value (e.g. unit conversion, clamping).",
+        "parameters": {"type": "object", "properties": {
+            "station_id": {"type": "string"},
+            "param": {"type": "string"},
+            "new_value": {"type": "number"},
+            "reason": {"type": "string"}
+        }, "required": ["station_id", "param", "new_value", "reason"]}
     }},
 ]
 
 
 def _check_data_quality(args: dict) -> str:
-    """Deterministic data quality checks."""
+    """Deterministic data quality checks (unchanged from original)."""
     name = args.get("dataset_name", "")
     try:
         data = json.loads(args.get("data_json", "[]"))
@@ -203,8 +548,6 @@ def _check_data_quality(args: dict) -> str:
         for key, val in row.items():
             if val is None or val == "" or val == 0.0:
                 null_counts[key] = null_counts.get(key, 0) + 1
-            # Outlier check for known parameters
-            fv = safe_float(val) if isinstance(val, (int, float, str)) else 0
             if name == "onlimo":
                 params = row.get("parameter", {})
                 if isinstance(params, dict):
@@ -213,13 +556,12 @@ def _check_data_quality(args: dict) -> str:
                         if pk == "amonia" and fval > 100:
                             issues.append({"station": row.get("station_id"), "field": f"parameter.{pk}", "value": fval, "issue": f"Amonia {fval} mg/L sangat tinggi (normal <10)"})
                         if pk == "ph" and fval > 0 and (fval < 3 or fval > 12):
-                            issues.append({"station": row.get("station_id"), "field": f"parameter.{pk}", "value": fval, "issue": f"pH {fval} di luar rentang fisik (3-12)"})
+                            issues.append({"station": row.get("station_id"), "field": f"parameter.{pk}", "value": fval, "issue": f"pH {fval} di luar rentang wajar (3-12)"})
                         if pk == "do" and fval > 20:
                             issues.append({"station": row.get("station_id"), "field": f"parameter.{pk}", "value": fval, "issue": f"DO {fval} mg/L terlalu tinggi (normal <15)"})
                         if pk == "cod" and fval > 1000:
                             issues.append({"station": row.get("station_id"), "field": f"parameter.{pk}", "value": fval, "issue": f"COD {fval} mg/L ekstrem"})
 
-    # Fields with >50% null
     high_null = {k: v for k, v in null_counts.items() if total > 0 and v / total > 0.5}
 
     return json.dumps({
@@ -232,7 +574,91 @@ def _check_data_quality(args: dict) -> str:
     }, ensure_ascii=False, indent=2)
 
 
-def _flag_outlier(args: dict) -> str:
+EVALUATOR_SYSTEM = f"""You are the DATA EVALUATOR for WQSA — DAS {TARGET_DAS}, {TARGET_REGION}.
+
+YOUR ONLY JOB: Validate and clean the raw data bundle. Do NOT analyse pollution or generate recommendations.
+
+NORMALIZATION METHODOLOGY:
+1. Call apply_domain_bounds() FIRST — auto-detects range violations, sets impossible values to null.
+2. Call detect_dead_sensors() — finds stations with all-zero readings (auto-excludes them).
+3. Call check_data_quality() for each dataset to find remaining issues.
+4. Use flag_outlier() for domain-specific outliers you notice.
+5. Use exclude_station() to remove stations too unreliable for analysis.
+6. Use set_parameter_null() for individual bad values (keeps station, removes value).
+7. Use replace_parameter() ONLY if you can justify the correction (e.g. unit conversion).
+
+RULES:
+- NEVER impute missing sensor readings with mean/median — this could mask real pollution.
+- If a value is suspicious but not physically impossible, FLAG it, don't delete it.
+- If >50% of a station's key parameters are null/zero, consider excluding it.
+- Null/0 on DHL, pH, or suhu means sensor failure in natural Indonesian water.
+- Values like amonia > 50 mg/L or nitrat > 100 mg/L are almost certainly sensor errors.
+
+After all tools, output a short JSON summary (the actual cleaned data is already saved by the tools):
+{{
+  "evaluation_summary": "brief text summary",
+  "actions_taken": ["list of key actions"],
+  "remaining_concerns": ["issues that could not be resolved"]
+}}"""
+
+
+class DataEvaluatorAgent:
+    def run(self, raw_bundle: dict) -> dict:
+        _log(f"[DataEvaluator] START — model={EVALUATOR_MODEL} stations={len(raw_bundle.get('candidate_stations', []))}")
+
+        # Buat workspace — tools akan memodifikasi ini
+        workspace = CleaningWorkspace(raw_bundle)
+
+        # Tool functions sebagai closures — capture workspace
+        tool_funcs = {
+            "think":               lambda a: think(a["thought"]),
+            "apply_domain_bounds": lambda a: workspace.apply_domain_bounds(),
+            "detect_dead_sensors": lambda a: workspace.detect_dead_sensors(),
+            "check_data_quality":  lambda a: _check_data_quality(a),
+            "flag_outlier":        lambda a: _flag_outlier_ws(workspace, a),
+            "exclude_station":     lambda a: workspace.exclude_station_tool(a["station_id"], a["reason"]),
+            "set_parameter_null":  lambda a: workspace.set_parameter_null_tool(a["station_id"], a["param"], a["reason"]),
+            "replace_parameter":   lambda a: workspace.replace_parameter_tool(a["station_id"], a["param"], a.get("new_value"), a["reason"]),
+        }
+
+        content = "Raw data bundle:\n\n" + json.dumps(raw_bundle, ensure_ascii=False, default=str)
+
+        raw = _run_loop(
+            EVALUATOR_MODEL, EVALUATOR_SYSTEM, content,
+            EVALUATOR_TOOLS, tool_funcs,
+            max_steps=15, label="DataEvaluator",
+        )
+
+        # Parse LLM output untuk summary (optional — workspace sudah punya data)
+        parsed = parse_agent_json(raw, "DataEvaluator")
+
+        # Data bersih SELALU dari workspace, bukan dari LLM JSON
+        result = workspace.to_cleaned_bundle()
+
+        # Merge LLM summary jika ada
+        if "evaluation_summary" in parsed:
+            result["data_quality"]["evaluator_summary"] = parsed.get("evaluation_summary", "")
+        if "remaining_concerns" in parsed:
+            result["data_quality"]["remaining_concerns"] = parsed.get("remaining_concerns", [])
+
+        _log(f"[DataEvaluator] Done — score={result['data_quality']['overall_score']}, "
+             f"excluded={len(result['data_quality']['excluded_stations'])}, "
+             f"flags={result['data_quality']['issues_found']}")
+
+        return result
+
+
+def _flag_outlier_ws(workspace: CleaningWorkspace, args: dict) -> str:
+    """Flag outlier and record in workspace."""
+    workspace.flags.append({
+        "station_id": args.get("station_id"),
+        "field": args.get("field_name"),
+        "value": args.get("value"),
+        "reason": args.get("reason"),
+        "severity": "critical",
+        "action": "flag",
+    })
+    workspace._quality_deductions += 3
     return json.dumps({
         "flagged": True,
         "station_id": args.get("station_id"),
@@ -240,58 +666,6 @@ def _flag_outlier(args: dict) -> str:
         "value": args.get("value"),
         "reason": args.get("reason"),
     })
-
-
-EVALUATOR_TOOL_FUNCS = {
-    "think":              lambda a: think(a["thought"]),
-    "check_data_quality": lambda a: _check_data_quality(a),
-    "flag_outlier":       lambda a: _flag_outlier(a),
-}
-
-EVALUATOR_SYSTEM = f"""You are the DATA EVALUATOR for WQSA — DAS {TARGET_DAS}, {TARGET_REGION}.
-
-YOUR ONLY JOB: Validate data quality of the raw data bundle. Do NOT analyse pollution or generate recommendations.
-
-STEPS:
-1. think() — plan which datasets to check
-2. check_data_quality() for each dataset: onlimo, rainfall, sparing, sitala
-3. flag_outlier() for any extreme values that need attention
-4. Output JSON with cleaned data and quality report
-
-OUTPUT FORMAT (JSON only, no markdown):
-{{
-  "data_quality": {{
-    "overall_score": 0-100,
-    "issues_found": int,
-    "outliers": [{{ "station_id", "field", "value", "reason" }}],
-    "null_warnings": [{{ "dataset", "field", "null_pct" }}],
-    "excluded_stations": ["station_ids with critically bad data"]
-  }},
-  "cleaned_candidate_stations": [... stations suitable for analysis],
-  "cleaned_rainfall": {{ ... }},
-  "cleaned_sparing": {{ ... }},
-  "cleaned_sitala": [...]
-}}"""
-
-
-class DataEvaluatorAgent:
-    def run(self, raw_bundle: dict) -> dict:
-        _log(f"[DataEvaluator] START — model={EVALUATOR_MODEL} stations={len(raw_bundle.get('candidate_stations', []))}")
-        raw = _run_loop(
-            EVALUATOR_MODEL, EVALUATOR_SYSTEM,
-            "Raw data bundle:\n\n" + json.dumps(raw_bundle, ensure_ascii=False, default=str),
-            EVALUATOR_TOOLS, EVALUATOR_TOOL_FUNCS,
-            max_steps=15, label="DataEvaluator",
-        )
-        result = _parse_json(raw, "DataEvaluator")
-        if "error" in result:
-            # Fallback: pass data through uncleaned
-            result["cleaned_candidate_stations"] = raw_bundle.get("candidate_stations", [])
-            result["cleaned_rainfall"] = raw_bundle.get("rainfall", {})
-            result["cleaned_sparing"] = raw_bundle.get("sparing", {})
-            result["cleaned_sitala"] = raw_bundle.get("sitala", [])
-            result["data_quality"] = {"overall_score": 0, "issues_found": 0, "outliers": [], "note": "Evaluator failed, data passed through uncleaned"}
-        return result
 
 
 # =============================================================================
@@ -321,7 +695,7 @@ ANALYST_TOOLS = [
     }},
     {"type": "function", "function": {
         "name": "cross_correlate_evidence",
-        "description": "Cross-correlate station anomaly with Sparing violations: spatial + temporal + profile match. Call ONLY if violations exist.",
+        "description": "Cross-correlate station anomaly with Sparing violations. Call ONLY if violations exist.",
         "parameters": {"type": "object", "properties": {
             "station_json": {"type": "string"}, "step4_json": {"type": "string"}, "step2_json": {"type": "string"},
         }, "required": ["station_json", "step4_json", "step2_json"]}
@@ -342,6 +716,13 @@ ANALYST_TOOL_FUNCS = {
     "calculate_ika_gap":           lambda a: calculate_ika_gap(a["sitala_data"]),
 }
 
+# Daftar tools analyst — untuk referensi ReportEvaluator
+ANALYST_TOOL_NAMES = [
+    "think", "detect_anomaly", "calculate_pollution_profile",
+    "evaluate_rainfall_branching", "check_sparing_compliance",
+    "cross_correlate_evidence", "calculate_ika_gap",
+]
+
 ANALYST_SYSTEM = f"""You are the DATA ANALYST for WQSA — DAS {TARGET_DAS}, {TARGET_REGION}.
 
 YOUR JOB: Analyse cleaned data from the DataEvaluator. Follow the reasoning chain strictly.
@@ -354,9 +735,19 @@ CHAIN:
 5. cross_correlate_evidence() ONLY if violations found (total_violations > 0)
 6. calculate_ika_gap() once per region
 
-If you receive FEEDBACK from the ReportEvaluator, address each question and revise your analysis.
+HANDLING MISSING DATA:
+- If a parameter is null (set to null by the evaluator), it means sensor failure. Skip that parameter.
+- If COD or BOD is null, you CANNOT calculate pollution profile → skip step 2 for that station.
+- If sparing monitoring arrays are empty, report "no monitoring data available" — do NOT invent data.
+- If sitala is empty, report ika_gap as null and ika_urgency as "DATA_TIDAK_TERSEDIA".
+- Work with what you have. Partial analysis is better than no analysis.
 
-OUTPUT (JSON only):
+If you receive FEEDBACK from the ReportEvaluator, address each question.
+IMPORTANT: You can ONLY answer questions using your available tools: {', '.join(ANALYST_TOOL_NAMES)}.
+If a question requires data retrieval, sensor inspection, or administrative action,
+respond that it is outside your analytical scope and recommend escalation.
+
+OUTPUT (JSON only — no markdown, no preamble text, no ```json fences):
 {{
   "analysis_id": "string",
   "timestamp": "ISO",
@@ -364,7 +755,7 @@ OUTPUT (JSON only):
     "station_id": "...", "station_name": "...",
     "indeks_mutu": 0.0, "status": "...",
     "is_limpasan": false, "rainfall_mm": 0.0,
-    "pollution_profile": "INDUSTRI|CAMPURAN|DOMESTIK",
+    "pollution_profile": "INDUSTRI|CAMPURAN|DOMESTIK|TIDAK_BISA_DIHITUNG",
     "cod_bod_ratio": 0.0,
     "causal_evidence": [{{
       "company_name": "...", "causal_confidence": "TINGGI|SEDANG|RENDAH",
@@ -396,42 +787,42 @@ class DataAnalystAgent:
             ANALYST_TOOLS, ANALYST_TOOL_FUNCS,
             max_steps=30, label=label,
         )
-        result = _parse_json(raw, label)
+        result = parse_agent_json(raw, label)
+        result = normalize_agent_output(result, "analyst")
 
-        # Cari teks narasi terbaik dari semua pesan yang dikumpulkan selama loop.
-        # Prioritaskan pesan yang mengandung kata kunci analisis, bukan pesan error/failure.
-        narrative = ""
-        PREFER = ["ANALYSIS RESULTS SUMMARY", "COMPLETE ANALYSIS SUMMARY",
-                  "ANALYSIS SUMMARY", "Station KLHK", "Anomaly Status:"]
-        AVOID  = ["Summary of Failures", "## Failure", "failed", "error occurred"]
-
-        # Cari dari belakang (pesan terbaru lebih relevan)
-        for text in reversed(_loop_collected_texts):
-            has_analysis = any(kw.lower() in text.lower() for kw in PREFER)
-            is_failure   = any(kw.lower() in text.lower() for kw in AVOID)
-            if has_analysis and not is_failure:
-                narrative = text
-                break
-
-        # Jika tidak ada yang cocok, cari pesan terpanjang yang bukan pure JSON dan bukan failure
-        if not narrative:
-            candidates = [
-                t for t in _loop_collected_texts
-                if len(t) > 200
-                and not t.strip().startswith('{')
-                and not any(kw.lower() in t.lower() for kw in AVOID)
-            ]
-            if candidates:
-                narrative = max(candidates, key=len)
-
-        # Fallback ke raw jika masih kosong
-        result["_raw_narrative"] = narrative or raw or ""
-        _log(f"[DataAnalyst] Narrative captured: {len(result['_raw_narrative'])} chars from {len(_loop_collected_texts)} messages")
+        # Capture narrative from collected texts
+        narrative = _extract_narrative(_loop_collected_texts, raw)
+        result["_raw_narrative"] = narrative
+        _log(f"[DataAnalyst] Narrative captured: {len(narrative)} chars from {len(_loop_collected_texts)} messages")
         return result
 
 
+def _extract_narrative(collected_texts: list, raw_fallback: str) -> str:
+    """Extract the best narrative text from collected LLM messages."""
+    PREFER = ["ANALYSIS RESULTS SUMMARY", "COMPLETE ANALYSIS SUMMARY",
+              "ANALYSIS SUMMARY", "Station KLHK", "Anomaly Status:"]
+    AVOID  = ["Summary of Failures", "## Failure", "failed", "error occurred"]
+
+    for text in reversed(collected_texts):
+        has_analysis = any(kw.lower() in text.lower() for kw in PREFER)
+        is_failure = any(kw.lower() in text.lower() for kw in AVOID)
+        if has_analysis and not is_failure:
+            return text
+
+    candidates = [
+        t for t in collected_texts
+        if len(t) > 200
+        and not t.strip().startswith('{')
+        and not any(kw.lower() in t.lower() for kw in AVOID)
+    ]
+    if candidates:
+        return max(candidates, key=len)
+
+    return raw_fallback or ""
+
+
 # =============================================================================
-# AGENT 3 — ReportEvaluatorAgent (validate + format for dashboard)
+# AGENT 3 — ReportEvaluatorAgent
 # =============================================================================
 
 REPORTER_SYSTEM = f"""You are the REPORT EVALUATOR for WQSA — DAS {TARGET_DAS}, {TARGET_REGION}.
@@ -457,11 +848,27 @@ CHECK FOR THESE INCONSISTENCIES:
 9. Anomalous station count in summary doesn't match detail entries
 10. Violation date newer than anomaly date (temporal inversion)
 
+IMPORTANT — SCOPE AWARENESS:
+The DataAnalyst has ONLY these tools: {', '.join(ANALYST_TOOL_NAMES)}.
+The analyst CANNOT:
+- Retrieve new data from the database
+- Inspect sensor hardware
+- Contact external offices (KLHK, SIMPEL, SITALA)
+- Fix data quality issues (that was the DataEvaluator's job)
+
+So DO NOT ask the analyst to:
+- "retrieve monitoring data" — it can't
+- "confirm sensor status" — it can't
+- "provide IKA targets" — it can't
+
+If data is missing, note it in your output as a data gap, not as a question for the analyst.
+Only ask questions the analyst CAN answer with its tools (re-analyze, recalculate, re-check).
+
 OUTPUT FORMAT — Feedback:
 {{
   "action": "feedback",
   "issues": ["description of each inconsistency found"],
-  "questions": ["specific question for the analyst to address"]
+  "questions": ["specific question the analyst CAN answer with its tools"]
 }}
 
 OUTPUT FORMAT — Accept:
@@ -469,18 +876,19 @@ OUTPUT FORMAT — Accept:
   "action": "accept",
   "analysis_highlight": {{
     "overall_urgency": "PANTAU|WASPADA|TINDAK",
-    "total_anomalous": int,
-    "total_normal": int,
+    "total_anomalous": 0,
+    "total_normal": 0,
     "top_stations": [{{
       "station_id": "...", "station_name": "...",
       "status": "...", "indeks_mutu": 0.0,
       "urgency": "...", "pollution_profile": "...",
       "top_suspect": "...", "causal_confidence": "...",
-      "key_finding": "1-sentence summary"
+      "key_finding": "1-sentence summary in Bahasa Indonesia"
     }}],
     "priority_actions": [{{
       "priority": 1, "action": "...", "target": "...", "deadline": "..."
-    }}]
+    }}],
+    "data_gaps": ["list of missing data that could not be resolved"]
   }},
   "detail_reasoning": {{
     "per_station": [{{
@@ -497,17 +905,18 @@ OUTPUT FORMAT — Accept:
     "data_quality_note": "..."
   }},
   "kpi_update": {{
-    "total_stations": int, "critical": int, "warning": int, "good": int,
-    "max_rain_mm": float, "langgar_count": int
+    "total_stations": 0, "critical": 0, "warning": 0, "good": 0,
+    "max_rain_mm": 0.0, "langgar_count": 0
   }},
-  "telegram_message": "formatted summary for auto-send to Telegram",
-  "ika_summary": {{"actual": float, "target": float, "gap": float, "urgency": "..."}}
+  "telegram_message": "formatted summary in Bahasa Indonesia",
+  "ika_summary": {{"actual": 0.0, "target": 0.0, "gap": 0.0, "urgency": "..."}}
 }}
 
 RULES:
-- Output ONLY valid JSON
+- Output ONLY valid JSON — no markdown, no preamble, no ```json fences
 - Bahasa Indonesia for telegram_message and key_finding
-- Be strict about inconsistencies — if something doesn't add up, use Action A"""
+- Be strict about inconsistencies — if something doesn't add up, use Action A
+- But only ask questions the analyst CAN answer"""
 
 
 class ReportEvaluatorAgent:
@@ -527,7 +936,8 @@ class ReportEvaluatorAgent:
                 ],
             )
             raw = response.choices[0].message.content.strip()
-            result = _parse_json(raw, "ReportEvaluator")
+            result = parse_agent_json(raw, "ReportEvaluator")
+            result = normalize_agent_output(result, "reporter")
 
             action = result.get("action", "accept")
             if action == "feedback":
@@ -538,4 +948,6 @@ class ReportEvaluatorAgent:
 
         except Exception as e:
             logger.error(f"[ReportEvaluator] Failed: {e}")
-            return {"action": "accept", "error": str(e), "analysis_highlight": {}, "detail_reasoning": {}}
+            return normalize_agent_output(
+                {"action": "accept", "error": str(e)}, "reporter"
+            )

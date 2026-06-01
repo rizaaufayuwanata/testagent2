@@ -90,6 +90,16 @@ def safe_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def safe_float_nullable(value: Any) -> Optional[float]:
+    """Like safe_float but returns None for null/empty — preserves sensor 'no data' info."""
+    if value is None or value == "" or value == "-" or value == "N/A":
+        return None
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return None
+
+
 def safe_int(value: Any, default: int = 0) -> int:
     if value is None or value == "" or value == "-":
         return default
@@ -172,7 +182,9 @@ def get_onlimo_data(station_id: str = "", das: str = "") -> list[dict]:
 
 
 def _normalize_onlimo(row: dict) -> dict:
-    """Konversi baris v_onlimo_terbaru ke format yang diharapkan tools.py."""
+    """Konversi baris v_onlimo_terbaru ke format yang diharapkan tools.py.
+    Sensor parameters pakai safe_float_nullable agar NULL dari DB tetap None
+    (bukan 0.0) — penting untuk membedakan sensor mati vs nilai memang 0."""
     ts = row.get("tanggal_ukur")
     return {
         "station_id":   row.get("station_id"),
@@ -183,25 +195,25 @@ def _normalize_onlimo(row: dict) -> dict:
         "kecamatan":    row.get("kecamatan"),
         "latitude":     safe_float(row.get("latitude")),
         "longitude":    safe_float(row.get("longitude")),
-        # Indeks & status dari onlimo_status (tervalidasi harian)
+        # Indeks & status — pakai safe_float (0.0 default OK di sini)
         "indeks_mutu":  safe_float(row.get("indeks_mutu")),
         "status":       row.get("status_mutu") or "TIDAK DIKETAHUI",
         "status_warna": row.get("status_warna"),
         "parameter_kritis": row.get("parameter_kritis"),
-        # Pembacaan sensor terbaru
+        # Pembacaan sensor — pakai safe_float_nullable (None = sensor tidak kirim)
         "parameter": {
-            "cod":      safe_float(row.get("cod")),
-            "bod":      safe_float(row.get("bod")),
-            "tss":      safe_float(row.get("tss")),
-            "do":       safe_float(row.get("do_val")),
-            "ph":       safe_float(row.get("ph")),
-            "nitrat":   safe_float(row.get("nitrat")),
-            "nitrit":   safe_float(row.get("nitrit")),
-            "amonia":   safe_float(row.get("amonia")),
-            "suhu":     safe_float(row.get("suhu")),
-            "turbidity": safe_float(row.get("turbidity")),
-            "dhl":      safe_float(row.get("dhl")),
-            "ews_per":  safe_float(row.get("ews_per")),
+            "cod":      safe_float_nullable(row.get("cod")),
+            "bod":      safe_float_nullable(row.get("bod")),
+            "tss":      safe_float_nullable(row.get("tss")),
+            "do":       safe_float_nullable(row.get("do_val")),
+            "ph":       safe_float_nullable(row.get("ph")),
+            "nitrat":   safe_float_nullable(row.get("nitrat")),
+            "nitrit":   safe_float_nullable(row.get("nitrit")),
+            "amonia":   safe_float_nullable(row.get("amonia")),
+            "suhu":     safe_float_nullable(row.get("suhu")),
+            "turbidity": safe_float_nullable(row.get("turbidity")),
+            "dhl":      safe_float_nullable(row.get("dhl")),
+            "ews_per":  safe_float_nullable(row.get("ews_per")),
         },
         "timestamp": ts.isoformat() if isinstance(ts, datetime) else str(ts or ""),
         "tanggal_validasi": str(row.get("tanggal_validasi") or ""),
